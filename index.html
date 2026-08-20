@@ -3,164 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mobile Identity & QR Node</title>
+    <title>Student Identity Node</title>
     
-    <!-- Minimalist library for generating QR codes -->
+    <!-- Dynamic SVG Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23333'/><text y='50%' x='50%' dominant-baseline='middle' text-anchor='middle' font-size='50' fill='white'>ID</text></svg>">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <!-- Robust library for scanning QR codes via WebRTC -->
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <link rel="manifest" href="manifest.json">
     
     <style>
-        body {
-            font-family: monospace, system-ui;
-            max-width: 500px;
-            margin: 0 auto;
-            padding: 20px;
-            text-align: center;
-            background-color: #f4f4f4;
-        }
-        .card {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        #reader {
-            width: 100%;
-            margin: 20px auto;
-            border: 2px solid #333;
-            border-radius: 4px;
-        }
-        #qrcode {
-            margin: 20px auto;
-            display: flex;
-            justify-content: center;
-        }
-        button {
-            background: #333;
-            color: #fff;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            font-family: inherit;
-            cursor: pointer;
-            border-radius: 4px;
-            width: 100%;
-            margin-bottom: 10px;
-        }
+        body { font-family: monospace, system-ui; max-width: 500px; margin: 0 auto; padding: 20px; text-align: center; background-color: #f4f4f4; }
+        .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        #reader { width: 100%; margin: 20px auto; border: 2px solid #333; border-radius: 4px; }
+        #qrcode { margin: 20px auto; display: flex; justify-content: center; }
+        button { background: #333; color: #fff; border: none; padding: 12px 24px; font-size: 16px; font-family: inherit; cursor: pointer; border-radius: 4px; width: 100%; margin-bottom: 10px; }
         button:hover { background: #555; }
-        .hidden { display: none; }
-        .data-dump {
-            background: #eee;
-            padding: 10px;
-            word-wrap: break-word;
-            font-size: 14px;
-        }
+        input[type="text"] { width: calc(100% - 24px); padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
+        .hidden { display: none !important; }
+        .data-dump { background: #eee; padding: 10px; word-wrap: break-word; font-size: 14px; }
+        #pwa-install-btn { background: #0066cc; margin-top: 20px; }
+        #pwa-install-btn:hover { background: #004499; }
+        .ios-hint { font-size: 12px; color: #666; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <div class="card">
-        <h2>Identity Node</h2>
-        <p><strong>Local UUID:</strong></p>
-        <div class="data-dump" id="uuid-display">Loading...</div>
+    <div id="registration-section" class="card hidden">
+        <h2>System Registration</h2>
+        <p>No local identity found. Please register this device to the student network.</p>
+        <input type="text" id="student-name" placeholder="Enter Full Name" required>
+        <button id="register-btn">Register Identity</button>
     </div>
 
-    <!-- Scanning Interface -->
-    <div id="scanner-section" class="card">
+    <div id="identity-section" class="card hidden">
+        <h2>Student Identity</h2>
+        <p><strong>Name:</strong> <span id="display-name"></span></p>
+        <p><strong>Local UUID:</strong></p>
+        <div class="data-dump" id="uuid-display"></div>
+    </div>
+
+    <div id="scanner-section" class="card hidden">
         <h3>1. Capture Source QR</h3>
         <button id="start-scan-btn">Start Camera</button>
         <div id="reader"></div>
     </div>
 
-    <!-- Output Interface -->
     <div id="result-section" class="card hidden">
         <h3>2. Captured Target</h3>
         <div class="data-dump" id="scanned-data"></div>
-        
         <h3>3. Fused Output QR</h3>
         <p><small>(Format: ScannedData::UUID)</small></p>
         <div id="qrcode"></div>
-        
         <button id="reset-btn" style="margin-top: 20px;">Reset Pipeline</button>
     </div>
 
+    <button id="pwa-install-btn" class="hidden">Install as App</button>
+    <p id="ios-instruction" class="ios-hint hidden">Using iOS? Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+
     <script>
-        // --- 1. Identity Management ---
-        // Fetch or generate the UUID in LocalStorage
         let deviceUUID = localStorage.getItem('local_mobile_identity');
-        if (!deviceUUID) {
-            deviceUUID = crypto.randomUUID();
-            localStorage.setItem('local_mobile_identity', deviceUUID);
-        }
-        document.getElementById('uuid-display').innerText = deviceUUID;
-
-        // --- 2. Element References ---
-        const html5QrCode = new Html5Qrcode("reader");
-        const scannerSection = document.getElementById('scanner-section');
+        let userName = localStorage.getItem('local_user_name');
+        
+        const regSection = document.getElementById('registration-section');
+        const idSection = document.getElementById('identity-section');
+        const scanSection = document.getElementById('scanner-section');
         const resultSection = document.getElementById('result-section');
-        const startScanBtn = document.getElementById('start-scan-btn');
-        const resetBtn = document.getElementById('reset-btn');
-        const scannedDataDisplay = document.getElementById('scanned-data');
-        const qrCodeContainer = document.getElementById('qrcode');
-
-        // --- 3. Hardware / Camera Control ---
-        startScanBtn.addEventListener('click', () => {
-            // Hide button while loading
-            startScanBtn.innerText = "Initializing Camera...";
+        const nameInput = document.getElementById('student-name');
+        
+        function initSystem() {
+            if (!deviceUUID || !userName) {
+                regSection.classList.remove('hidden');
+            } else {
+                idSection.classList.remove('hidden');
+                scanSection.classList.remove('hidden');
+                document.getElementById('display-name').innerText = userName;
+                const maskedUUID = `********-****-****-****-******${deviceUUID.slice(-4)}`;
+                document.getElementById('uuid-display').innerText = maskedUUID;
+            }
             
+            // Detect iOS for manual PWA instruction
+            const isIos = () => {
+                const userAgent = window.navigator.userAgent.toLowerCase();
+                return /iphone|ipad|ipod/.test(userAgent);
+            };
+            // Detect if already installed (standalone mode)
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+            if (isIos() && !isStandalone) {
+                document.getElementById('ios-instruction').classList.remove('hidden');
+            }
+        }
+
+        document.getElementById('register-btn').addEventListener('click', () => {
+            const inputName = nameInput.value.trim();
+            if (!inputName) { alert("Please enter your full name."); return; }
+            deviceUUID = crypto.randomUUID();
+            userName = inputName;
+            localStorage.setItem('local_mobile_identity', deviceUUID);
+            localStorage.setItem('local_user_name', userName);
+            
+            const formBaseURL = "https://docs.google.com/forms/d/e/1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ/viewform?usp=pp_url";
+            const queryParams = `&entry.954365518=${encodeURIComponent(deviceUUID)}&entry.1848492482=${encodeURIComponent(userName)}`;
+            window.open(formBaseURL + queryParams, '_blank');
+            
+            regSection.classList.add('hidden');
+            initSystem();
+        });
+
+        const html5QrCode = new Html5Qrcode("reader");
+        const startScanBtn = document.getElementById('start-scan-btn');
+        
+        startScanBtn.addEventListener('click', () => {
+            startScanBtn.innerText = "Initializing...";
             html5QrCode.start(
-                { facingMode: "environment" }, // Force rear camera
+                { facingMode: "environment" }, 
                 { fps: 15, qrbox: { width: 250, height: 250 } },
-                (decodedText, decodedResult) => {
-                    // SUCCESS callback: Stop the camera thread and process
+                (decodedText) => {
                     html5QrCode.stop().then(() => {
                         startScanBtn.innerText = "Start Camera";
                         executeFusionPipeline(decodedText);
                     });
                 },
-                (errorMessage) => {
-                    // WARNING callback: Triggers every frame it fails to find a QR. 
-                    // Safely ignored for this implementation.
-                }
-            ).catch(err => {
-                alert("Hardware Error: Could not access camera. Ensure you are on HTTPS. Details: " + err);
+                (err) => {}
+            ).catch(() => {
+                alert("Camera access denied.");
                 startScanBtn.innerText = "Start Camera";
             });
         });
 
-        // --- 4. Logic Pipeline ---
         function executeFusionPipeline(scannedText) {
-            // Toggle UI state
-            scannerSection.classList.add('hidden');
+            scanSection.classList.add('hidden');
             resultSection.classList.remove('hidden');
-            
-            // Display raw scan
-            scannedDataDisplay.innerText = scannedText;
-
-            // Fuse data streams
-            const fusedKey = scannedText + "::" + deviceUUID;
-
-            // Clear any existing QR code in the DOM
+            document.getElementById('scanned-data').innerText = scannedText;
+            const qrCodeContainer = document.getElementById('qrcode');
             qrCodeContainer.innerHTML = "";
-
-            // Generate physical QR representation
             new QRCode(qrCodeContainer, {
-                text: fusedKey,
-                width: 250,
-                height: 250,
-                colorDark : "#000000",
-                colorLight : "#ffffff",
-                correctLevel : QRCode.CorrectLevel.L // Low error correction = less dense matrix = faster reads later
+                text: scannedText + "::" + deviceUUID,
+                width: 250, height: 250,
+                colorDark : "#000000", colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.L
             });
         }
 
-        // --- 5. State Reset ---
-        resetBtn.addEventListener('click', () => {
+        document.getElementById('reset-btn').addEventListener('click', () => {
             resultSection.classList.add('hidden');
-            scannerSection.classList.remove('hidden');
+            scanSection.classList.remove('hidden');
         });
+
+        let deferredPrompt;
+        const installBtn = document.getElementById('pwa-install-btn');
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.classList.remove('hidden');
+        });
+        installBtn.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') installBtn.classList.add('hidden');
+                deferredPrompt = null;
+            }
+        });
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+
+        initSystem();
     </script>
 </body>
 </html>
