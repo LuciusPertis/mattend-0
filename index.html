@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Identity & QR Node</title>
+    
+    <!-- Minimalist library for generating QR codes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Robust library for scanning QR codes via WebRTC -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    
+    <style>
+        body {
+            font-family: monospace, system-ui;
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f4f4f4;
+        }
+        .card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        #reader {
+            width: 100%;
+            margin: 20px auto;
+            border: 2px solid #333;
+            border-radius: 4px;
+        }
+        #qrcode {
+            margin: 20px auto;
+            display: flex;
+            justify-content: center;
+        }
+        button {
+            background: #333;
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 4px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button:hover { background: #555; }
+        .hidden { display: none; }
+        .data-dump {
+            background: #eee;
+            padding: 10px;
+            word-wrap: break-word;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Identity Node</h2>
+        <p><strong>Local UUID:</strong></p>
+        <div class="data-dump" id="uuid-display">Loading...</div>
+    </div>
+
+    <!-- Scanning Interface -->
+    <div id="scanner-section" class="card">
+        <h3>1. Capture Source QR</h3>
+        <button id="start-scan-btn">Start Camera</button>
+        <div id="reader"></div>
+    </div>
+
+    <!-- Output Interface -->
+    <div id="result-section" class="card hidden">
+        <h3>2. Captured Target</h3>
+        <div class="data-dump" id="scanned-data"></div>
+        
+        <h3>3. Fused Output QR</h3>
+        <p><small>(Format: ScannedData::UUID)</small></p>
+        <div id="qrcode"></div>
+        
+        <button id="reset-btn" style="margin-top: 20px;">Reset Pipeline</button>
+    </div>
+
+    <script>
+        // --- 1. Identity Management ---
+        // Fetch or generate the UUID in LocalStorage
+        let deviceUUID = localStorage.getItem('local_mobile_identity');
+        if (!deviceUUID) {
+            deviceUUID = crypto.randomUUID();
+            localStorage.setItem('local_mobile_identity', deviceUUID);
+        }
+        document.getElementById('uuid-display').innerText = deviceUUID;
+
+        // --- 2. Element References ---
+        const html5QrCode = new Html5Qrcode("reader");
+        const scannerSection = document.getElementById('scanner-section');
+        const resultSection = document.getElementById('result-section');
+        const startScanBtn = document.getElementById('start-scan-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const scannedDataDisplay = document.getElementById('scanned-data');
+        const qrCodeContainer = document.getElementById('qrcode');
+
+        // --- 3. Hardware / Camera Control ---
+        startScanBtn.addEventListener('click', () => {
+            // Hide button while loading
+            startScanBtn.innerText = "Initializing Camera...";
+            
+            html5QrCode.start(
+                { facingMode: "environment" }, // Force rear camera
+                { fps: 15, qrbox: { width: 250, height: 250 } },
+                (decodedText, decodedResult) => {
+                    // SUCCESS callback: Stop the camera thread and process
+                    html5QrCode.stop().then(() => {
+                        startScanBtn.innerText = "Start Camera";
+                        executeFusionPipeline(decodedText);
+                    });
+                },
+                (errorMessage) => {
+                    // WARNING callback: Triggers every frame it fails to find a QR. 
+                    // Safely ignored for this implementation.
+                }
+            ).catch(err => {
+                alert("Hardware Error: Could not access camera. Ensure you are on HTTPS. Details: " + err);
+                startScanBtn.innerText = "Start Camera";
+            });
+        });
+
+        // --- 4. Logic Pipeline ---
+        function executeFusionPipeline(scannedText) {
+            // Toggle UI state
+            scannerSection.classList.add('hidden');
+            resultSection.classList.remove('hidden');
+            
+            // Display raw scan
+            scannedDataDisplay.innerText = scannedText;
+
+            // Fuse data streams
+            const fusedKey = scannedText + "::" + deviceUUID;
+
+            // Clear any existing QR code in the DOM
+            qrCodeContainer.innerHTML = "";
+
+            // Generate physical QR representation
+            new QRCode(qrCodeContainer, {
+                text: fusedKey,
+                width: 250,
+                height: 250,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.L // Low error correction = less dense matrix = faster reads later
+            });
+        }
+
+        // --- 5. State Reset ---
+        resetBtn.addEventListener('click', () => {
+            resultSection.classList.add('hidden');
+            scannerSection.classList.remove('hidden');
+        });
+    </script>
+</body>
+</html>
