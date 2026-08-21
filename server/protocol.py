@@ -43,7 +43,7 @@ def make_source_qr(pc_secret: bytes, c_id: int, gen_t: int | None = None) -> tup
 def make_response_qr(app_secret: bytes, source_text: str, device_uuid: str, cap_t: int | None = None) -> str:
     """The phone's half. Lives here so tests and the simulator can exercise it.
 
-    The real implementation of this hop is client_web/protocol.js; the two must
+    The real implementation of this hop is docs/protocol.js; the two must
     stay byte-for-byte identical.
     """
     cap_t = int(time.time()) if cap_t is None else cap_t

@@ -138,7 +138,7 @@
 
         // Display-only hint. Keep in step with delta_t_max_seconds in server/config.json;
         // the server is the authority, this just warns the student before they walk up.
-        const CAPTURE_WINDOW_SECONDS = 90;
+        const CAPTURE_WINDOW_SECONDS = 15;
         let expiryTimer = null;
 
         async function executeFusionPipeline(scannedText) {

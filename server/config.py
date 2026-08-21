@@ -126,7 +126,7 @@ if __name__ == "__main__":
         print(f'  "pc_secret_hex":  "{secrets.token_hex(32)}",')
         print(f'  "app_secret_hex": "{secrets.token_hex(32)}",')
         print("\n# pc_secret stays on the two lab PCs.")
-        print("# app_secret is also baked into client_web/protocol.js (APP_SECRET_HEX).")
+        print("# app_secret is also baked into docs/protocol.js (APP_SECRET_HEX).")
     else:
         cfg = load()
         print(f"session : {cfg.session.display}")

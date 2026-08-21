@@ -36,7 +36,7 @@ def subkey(master: bytes, label: str) -> bytes:
 
     HMAC-SHA256 rather than something nicer because the phone half of this has
     to compute the identical value in WebCrypto, which offers HMAC and little
-    else. See client_web/protocol.js.
+    else. See docs/protocol.js.
     """
     return hmac.new(master, label.encode(), hashlib.sha256).digest()
 

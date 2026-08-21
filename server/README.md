@@ -28,7 +28,7 @@ key that made it.
 | `pc_out.py` | fullscreen rotating QR (Tk) |
 | `pc_in.py` | webcam scanner and verdict wall (cv2) |
 | `simulate.py` | all six verdicts with no camera and no phone |
-| `make_vectors.py` | interop vectors for `client_web/selftest.html` |
+| `make_vectors.py` | interop vectors for `docs/selftest.html` |
 | `test_server.py` | 36 unit tests |
 
 ## Setup
@@ -41,7 +41,7 @@ cp config.example.json config.json
 python -m server.config --new-secrets     # paste both into config.json
 ```
 
-Then bake the **same** `app_secret_hex` into `client_web/protocol.js`
+Then bake the **same** `app_secret_hex` into `docs/protocol.js`
 (`APP_SECRET_HEX`). `pc_secret_hex` never leaves the two lab PCs — that is the
 key the phone must not have.
 
@@ -97,7 +97,7 @@ python -m server.simulate --png            # writes data/sim_*.png to point a ca
 python -m server.config                    # print the resolved session and C_ID
 ```
 
-For the client half, run `python -m server.make_vectors`, serve `client_web/`
+For the client half, run `python -m server.make_vectors`, serve `docs/`
 over HTTP and open `selftest.html` on the phone. Every vector must pass or
 `pc_in` will not be able to read that device's QR.
 

@@ -1,4 +1,4 @@
-"""Emit known-answer vectors so client_web/selftest.html can prove the JS half
+"""Emit known-answer vectors so docs/selftest.html can prove the JS half
 of P_s agrees with this Python byte for byte.
 
     python -m server.make_vectors
@@ -12,7 +12,7 @@ from pathlib import Path
 from . import codec, config as config_mod
 from .protocol import make_response_qr, make_source_qr
 
-OUT = Path(__file__).resolve().parent.parent / "client_web" / "vectors.json"
+OUT = Path(__file__).resolve().parent.parent / "docs" / "vectors.json"
 
 UUIDS = [
     "11111111-1111-4111-8111-111111111111",

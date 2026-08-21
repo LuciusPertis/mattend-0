@@ -12,6 +12,8 @@ payloads that never resolve to an identity at all.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import sys
 import time
 from collections import OrderedDict
@@ -98,14 +100,37 @@ def compose(frame, results, cfg, roster, stats):
     return canvas
 
 
+@contextlib.contextmanager
+def _muted_stderr():
+    """Silence the native layer, which does not go through Python's sys.stderr."""
+    saved = os.dup(2)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, 2)
+        yield
+    finally:
+        os.dup2(saved, 2)
+        os.close(devnull)
+        os.close(saved)
+
+
 def list_cameras(limit: int = 6) -> None:
+    """Probe the first few indices. Probing an index with no camera behind it is
+    normal, but OpenCV's V4L backend complains loudly on stderr each time and
+    scrolls the useful lines away -- so mute it for the duration of the probe."""
+    found = 0
     for index in range(limit):
-        cap = cv2.VideoCapture(index)
-        if cap.isOpened():
-            ok, frame = cap.read()
-            shape = frame.shape[:2] if ok and frame is not None else "?"
-            print(f"  [{index}] open, frame {shape}")
-        cap.release()
+        with _muted_stderr():
+            cap = cv2.VideoCapture(index)
+            opened = cap.isOpened()
+            ok, frame = cap.read() if opened else (False, None)
+            cap.release()
+        if opened and ok and frame is not None:
+            height, width = frame.shape[:2]
+            print(f"  camera_index {index}  ->  {width}x{height}")
+            found += 1
+    if not found:
+        print("  no cameras found. Check the webcam is plugged in and not held by another app.")
 
 
 def main() -> int:
