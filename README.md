@@ -22,12 +22,15 @@ Miss any of those and it doesn't count.
 
 | piece | runs on | what it is |
 |---|---|---|
-| **PC (out)** | classroom machine + projector | `python3 -m server.pc_out` — shows QR #1, refreshing every few seconds |
+| **The station** | your lab machine | `python3 -m server.app` — one window: QR on the left, verifications on the right |
 | **The phone app** | student's phone | a web page at `https://<you>.github.io/mattend-0/` — scans QR #1, produces QR #2 |
-| **PC (in)** | machine with a webcam | `python3 -m server.pc_in` — reads QR #2, names the student, logs it |
 
-You can run both PC halves on one machine (projector out, webcam in) or on two.
-If you use two, **both need the same `config.json`** — same secret, same session.
+That's it for the normal case — **one command**. The station shows the QR *and*
+watches the webcam.
+
+Running the two halves on separate machines instead? Use `python3 -m server.pc_out`
+on the projector and `python3 -m server.pc_in` on the scanner, and give **both the
+same `config.json`** — same secret, same session, or nothing verifies.
 
 ---
 
@@ -139,17 +142,21 @@ Google Form → Responses → download CSV → save as `server/data/responses.cs
 ### 3. Launch
 
 ```bash
-python3 -m server.pc_out      # the projector
-python3 -m server.pc_in       # the door camera
+python3 -m server.app
 ```
 
-| | keys |
-|---|---|
-| **pc_out** | `Esc` or `q` quit · `F11` toggle fullscreen |
-| **pc_in** | `q` quit · `e` export CSV now · `r` reload roster mid-class |
+The window opens maximised but stays a normal window, so you can minimise it.
+Point the projector at the left half and the webcam at the queue.
 
-`r` is the useful one — a student who registers during class shows up without a
-restart.
+| key | does |
+|---|---|
+| `r` | **reload the roster** — a student who registers mid-class shows up without a restart |
+| `e` | export the CSV right now |
+| `c` | clear the verification cards off screen |
+| `F11` | true fullscreen · `Esc` leaves it |
+| `q` | quit (exports on the way out) |
+
+The panel on the left shows a small camera preview so you can aim it.
 
 ### 4. Collect
 
@@ -171,7 +178,8 @@ On exit, `pc_in` writes:
 
 ## What the cards mean
 
-The panel on the right of the `pc_in` window shows one card per scan:
+The right half of the window is a queue. The **newest four** verdicts show large;
+older ones shrink to a single line and eventually scroll off the bottom.
 
 | card | colour | meaning | what to do |
 |---|---|---|---|
@@ -192,13 +200,14 @@ again at the end of class keeps their mark.
 | symptom | cause | fix |
 |---|---|---|
 | **Everyone** gets `INVALID CODE` | `app_secret_hex` in `config.json` ≠ `APP_SECRET_HEX` in `docs/protocol.js` | make them match, `make_vectors`, hard-refresh the phone |
-| Everyone gets `WRONG SESSION` | `pc_out` and `pc_in` are on different `session` blocks | same `config.json` on both machines |
-| Everyone gets `TIMEOUT` | the **projector PC's clock** is off | `timedatectl set-ntp true` on the pc_out machine |
+| Everyone gets `WRONG SESSION` | two-machine setup with different `session` blocks | same `config.json` on both machines |
+| Everyone gets `TIMEOUT` | the **station's clock** is off, or `delta_t_max_seconds` is too tight | `timedatectl set-ntp true`; try raising the window |
 | One student gets `USER NOT FOUND` | not registered, or wrong CID on the form | check the CSV, then press `r` |
 | Phone shows "Could not fuse" | it scanned some other QR, not the projector | rescan |
 | Phone app won't open the camera | needs HTTPS | use the `github.io` URL, not a local file |
-| `cannot open camera 0` | wrong camera index | `python3 -m server.pc_in --list-cameras`, set `camera_index` |
+| `cannot open camera 0` | wrong index, or another app holds the webcam | `python3 -m server.app --list-cameras`, set `camera_index` |
 | Projector QR won't scan | too small, or a screensaver dimmed it | `F11` fullscreen, disable sleep |
+| Window opens but no camera preview | webcam busy or absent | close other apps using it, then `--list-cameras` |
 
 Only the **phone's** clock and the **projector PC's** clock matter for timing.
 The door camera's clock is irrelevant — it never looks at its own time.
@@ -213,8 +222,7 @@ In `server/config.json`:
 |---|---|---|
 | `delta_t_max_seconds` | `90` | how long a student has between projector and door. Lower is stricter |
 | `qr_rotate_seconds` | `5` | how often QR #1 changes |
-| `camera_index` | `0` | which webcam |
-| `card_ttl_seconds` | `6` | how long a verdict card stays on screen |
+| `camera_index` | `0` | which webcam — see `python3 -m server.app --list-cameras` |
 
 If you lower `delta_t_max_seconds`, also lower `CAPTURE_WINDOW_SECONDS` in
 `docs/index.html` so the phone's countdown tells the truth.

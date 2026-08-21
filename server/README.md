@@ -25,8 +25,11 @@ key that made it.
 | `roster.py` | Google Form CSV → per-CID roster, UNF and MUoP indexes |
 | `verify.py` | the verdict pipeline and its precedence |
 | `store.py` | local dump `UUID │ CID │ Gen_T │ Cap_T`, one row per student |
-| `pc_out.py` | fullscreen rotating QR (Tk) |
-| `pc_in.py` | webcam scanner and verdict wall (cv2) |
+| `app.py` | **the operator GUI** — QR left, verdict queue right, one Tk window |
+| `ui.py` | Tk widgets: `QRPanel`, `VerdictQueue` |
+| `camera.py` | capture + decode on a background thread |
+| `pc_out.py` | projector-only view, for a two-machine setup |
+| `pc_in.py` | headless scanner, for a two-machine setup or debugging |
 | `simulate.py` | all six verdicts with no camera and no phone |
 | `make_vectors.py` | interop vectors for `docs/selftest.html` |
 | `test_server.py` | 36 unit tests |
@@ -38,7 +41,7 @@ pip install qrcode opencv-python          # tkinter comes from python3-tk
 
 cd mattend-0/server
 cp config.example.json config.json
-python -m server.config --new-secrets     # paste both into config.json
+python3 -m server.config --new-secrets     # paste both into config.json
 ```
 
 Then bake the **same** `app_secret_hex` into `docs/protocol.js`
@@ -61,12 +64,36 @@ Export the Google Form responses to CSV and save as `data/responses.csv`
 ## Running a class
 
 ```bash
-python -m server.pc_out      # projector machine — Esc quits, F11 fullscreen
-python -m server.pc_in       # scanner machine  — q quit, e export, r reload roster
+python3 -m server.app        # one machine: QR + scanner in one window
 ```
 
-`pc_in` writes `data/attendance.sqlite3` and exports
-`data/attendance_export.csv` on exit or on `e`.
+Keys: `q` quit · `e` export · `r` reload roster · `c` clear cards · `F11` fullscreen.
+It opens maximised via `-zoomed` rather than `-fullscreen`, so it still minimises.
+
+Two machines instead:
+
+```bash
+python3 -m server.pc_out     # projector
+python3 -m server.pc_in      # scanner, headless
+```
+
+Either way you get `data/attendance.sqlite3` and `data/attendance_export.csv`.
+
+### Threading
+
+Tk is single-threaded and its mainloop must not block, but
+`detectAndDecodeMulti` costs tens of milliseconds a frame. So `camera.py` runs
+capture and decode on its own thread and posts payload strings to a
+`queue.Queue`; `app.drain()` empties it on a 60 ms `after` timer. Nothing
+outside the main thread ever touches a Tk widget.
+
+### Why there is no OpenCV window
+
+`cv2.imshow` is not used anywhere. On an OpenCV built against Qt5, a window
+title containing a non-ASCII character breaks the internal window lookup and
+`imshow` spawns a **new window every frame** — measured at 58 windows in 3
+seconds with `"mattend · PC (in)"` as the title, against 1 for a plain ASCII
+name. The GUI is Tk throughout, so the whole class of bug is gone.
 
 ## Verdicts
 
@@ -91,13 +118,13 @@ timeout, so a student who scans again at the end of class keeps their mark.
 ## Checking it works
 
 ```bash
-python -m unittest server.test_server -v   # 36 tests
-python -m server.simulate                  # all six verdicts, no hardware
-python -m server.simulate --png            # writes data/sim_*.png to point a camera at
-python -m server.config                    # print the resolved session and C_ID
+python3 -m unittest server.test_server -v  # 36 tests
+python3 -m server.simulate                 # all six verdicts, no hardware
+python3 -m server.simulate --png            # writes data/sim_*.png to point a camera at
+python3 -m server.config                   # print the resolved session and C_ID
 ```
 
-For the client half, run `python -m server.make_vectors`, serve `docs/`
+For the client half, run `python3 -m server.make_vectors`, serve `docs/`
 over HTTP and open `selftest.html` on the phone. Every vector must pass or
 `pc_in` will not be able to read that device's QR.
 

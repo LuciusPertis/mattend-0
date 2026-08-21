@@ -60,7 +60,6 @@ class Config:
     roster_csv: str = "data/responses.csv"
     db_path: str = "data/attendance.sqlite3"
     camera_index: int = 0
-    card_ttl_seconds: int = 6
     base_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parent)
 
     def path(self, value: str) -> Path:
