@@ -1,0 +1,111 @@
+{
+  "b32": [
+    {
+      "bytes": [],
+      "text": ""
+    },
+    {
+      "bytes": [
+        0
+      ],
+      "text": "AA"
+    },
+    {
+      "bytes": [
+        255,
+        255,
+        255,
+        255,
+        255
+      ],
+      "text": "77777777"
+    },
+    {
+      "bytes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "text": "AAAQEAYEAUDAOCAJBIFQYDIO"
+    },
+    {
+      "bytes": [
+        0,
+        37,
+        74,
+        111,
+        148,
+        185,
+        222,
+        3,
+        40,
+        77,
+        114,
+        151,
+        188,
+        225,
+        6,
+        43,
+        80,
+        117,
+        154,
+        191,
+        228,
+        9,
+        46,
+        83,
+        120,
+        157,
+        194,
+        231,
+        12,
+        49,
+        86,
+        123,
+        160,
+        197,
+        234,
+        15,
+        52,
+        89,
+        126,
+        163,
+        200,
+        237
+      ],
+      "text": "AASUU34UXHPAGKCNOKL3ZYIGFNIHLGV74QES4U3YTXBOODBRKZ52BRPKB42FS7VDZDWQ"
+    }
+  ],
+  "fuse": [
+    {
+      "source": "E7PW2WOD5NME6EHJFQJBT33O",
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "capT": 1700000007,
+      "expected": "RPGYQJHMNSWAWWSI7ZGANC7R32QDOMB3L6LYNNQPHJJ4XN7VNO3V2E6ZURAAF3PZAUSQ"
+    },
+    {
+      "source": "HPMIOKGEPBCZRVHOPGZWJ2XW",
+      "uuid": "0f8fad5b-d9cb-469f-a165-70867728950e",
+      "capT": 1700000919,
+      "expected": "BRTX3IRAGL5D3UQWUU7N4H2S553YRQGDGAXGLIZ35YZQF7NNY57YSAIX3VCOSSFOFCZQ"
+    },
+    {
+      "source": "SPBCZRCNM4KBNEDRDQK24JHK",
+      "uuid": "ffffffff-ffff-4fff-bfff-ffffffffffff",
+      "capT": 1700001831,
+      "expected": "UIM3ES7HP6NMEASKT7QAQAEAYTSEMLM2DEGVJBHKS2I7E2RZHX7DXKN6J6VKAQHTEA4Q"
+    }
+  ]
+}

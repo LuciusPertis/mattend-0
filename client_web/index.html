@@ -10,6 +10,7 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="protocol.js"></script>
     <link rel="manifest" href="manifest.json">
     
     <style>
@@ -25,6 +26,9 @@
         #pwa-install-btn { background: #0066cc; margin-top: 20px; }
         #pwa-install-btn:hover { background: #004499; }
         .ios-hint { font-size: 12px; color: #666; margin-top: 10px; }
+        .fusion-status { font-size: 13px; color: #666; margin: 10px 0 0; }
+        .fusion-status.stale { color: #c82828; font-weight: bold; }
+        .fusion-status.error { color: #c82828; }
     </style>
 </head>
 <body>
@@ -53,8 +57,9 @@
         <h3>2. Captured Target</h3>
         <div class="data-dump" id="scanned-data"></div>
         <h3>3. Fused Output QR</h3>
-        <p><small>(Format: ScannedData::UUID)</small></p>
+        <p><small>Z*_s = P_s( scanned blob + UUID + capture time )</small></p>
         <div id="qrcode"></div>
+        <p id="fusion-status" class="fusion-status"></p>
         <button id="reset-btn" style="margin-top: 20px;">Reset Pipeline</button>
     </div>
 
@@ -131,21 +136,60 @@
             });
         });
 
-        function executeFusionPipeline(scannedText) {
+        // Display-only hint. Keep in step with delta_t_max_seconds in server/config.json;
+        // the server is the authority, this just warns the student before they walk up.
+        const CAPTURE_WINDOW_SECONDS = 90;
+        let expiryTimer = null;
+
+        async function executeFusionPipeline(scannedText) {
             scanSection.classList.add('hidden');
             resultSection.classList.remove('hidden');
             document.getElementById('scanned-data').innerText = scannedText;
+
             const qrCodeContainer = document.getElementById('qrcode');
+            const status = document.getElementById('fusion-status');
             qrCodeContainer.innerHTML = "";
+            status.className = 'fusion-status';
+            status.innerText = "Fusing...";
+
+            let fused;
+            try {
+                fused = await MattendProtocol.makeResponseQR(scannedText, deviceUUID);
+            } catch (err) {
+                status.className = 'fusion-status error';
+                status.innerText = `Could not fuse: ${err.message}`;
+                return;
+            }
+
             new QRCode(qrCodeContainer, {
-                text: scannedText + "::" + deviceUUID,
+                text: fused.text,
                 width: 250, height: 250,
                 colorDark : "#000000", colorLight : "#ffffff",
                 correctLevel : QRCode.CorrectLevel.L
             });
+            startExpiryCountdown(fused.capT, status);
+        }
+
+        function startExpiryCountdown(capT, status) {
+            clearInterval(expiryTimer);
+            const tick = () => {
+                const age = Math.floor(Date.now() / 1000) - capT;
+                const left = CAPTURE_WINDOW_SECONDS - age;
+                if (left > 0) {
+                    status.className = 'fusion-status';
+                    status.innerText = `Show this to the scanner — about ${left}s left.`;
+                } else {
+                    status.className = 'fusion-status stale';
+                    status.innerText = "Expired. Reset and scan the room QR again.";
+                    clearInterval(expiryTimer);
+                }
+            };
+            tick();
+            expiryTimer = setInterval(tick, 1000);
         }
 
         document.getElementById('reset-btn').addEventListener('click', () => {
+            clearInterval(expiryTimer);
             resultSection.classList.add('hidden');
             scanSection.classList.remove('hidden');
         });

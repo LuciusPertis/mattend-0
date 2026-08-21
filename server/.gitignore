@@ -1,0 +1,6 @@
+config.json
+data/*.sqlite3
+data/*.csv
+!data/responses.sample.csv
+__pycache__/
+data/sim_*.png
