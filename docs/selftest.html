@@ -23,6 +23,7 @@
 <ul id="results"></ul>
 
 <script src="protocol.js"></script>
+<script src="enroll.js"></script>
 <script>
 const results = document.getElementById('results');
 let failures = 0;
@@ -58,6 +59,23 @@ function check(name, actual, expected) {
       const out = await P.makeResponseQR(v.source, v.uuid, v.capT);
       check(`P_s fusion #${i} (${v.uuid.slice(0, 8)}…)`, out.text, v.expected);
     }
+
+    const E = window.MattendEnroll;
+    for (let i = 0; i < (vectors.enroll || []).length; i++) {
+      const v = vectors.enroll[i];
+      check(`enroll recognised #${i}`, String(E.looksLikeEnrollment(v.url)), 'true');
+      const got = E.parse(v.url);
+      check(`enroll cid #${i}`, got.courseCid, v.parsed.course_cid);
+      check(`enroll form #${i}`, got.formId, v.parsed.form_id);
+      check(`enroll entries #${i}`,
+            [got.entryUuid, got.entryName, got.entryCid].join('|'),
+            [v.parsed.entry_uuid, v.parsed.entry_name, v.parsed.entry_cid].join('|'));
+      check(`enroll prefill #${i}`,
+            E.prefillUrl(got, v.prefill.match(/entry\.\d+=([^&]*)/)[1], 'Test Student'),
+            v.prefill);
+    }
+    check('a source QR is not an enrollment link',
+          String(E.looksLikeEnrollment(vectors.fuse[0].source)), 'false');
 
     let rejected = false;
     try { await P.makeResponseQR('AAAA', vectors.fuse[0].uuid, 0); } catch (e) { rejected = true; }

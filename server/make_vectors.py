@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import codec, config as config_mod
+from . import codec, config as config_mod, enroll
+from .classroom import Classroom
 from .protocol import make_response_qr, make_source_qr
 
 OUT = Path(__file__).resolve().parent.parent / "docs" / "vectors.json"
@@ -43,8 +44,28 @@ def main() -> int:
             }
         )
 
-    OUT.write_text(json.dumps({"b32": b32, "fuse": fuse}, indent=2) + "\n")
-    print(f"[+] wrote {len(b32)} base32 and {len(fuse)} fusion vectors to {OUT}")
+    pwa = cfg.pwa_url or "https://example.github.io/mattend-0/"
+    enrol = []
+    for index, room in enumerate(
+        (
+            Classroom(key="a", course_cid="PSP-LAB-SEC-D", label="PSP Lab Sec D",
+                      form_id="1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ",
+                      entries={"uuid": "954365518", "name": "1848492482", "cid": "1848492483"}),
+            Classroom(key="b", course_cid="DS-LAB-B", label="Data Structures & Algo",
+                      form_id="1FAIpQLSshortIdHere_00", entries={"uuid": "11", "name": "22"}),
+        )
+    ):
+        url = enroll.build_url(room, pwa)
+        enrol.append(
+            {
+                "url": url,
+                "parsed": enroll.parse_url(url),
+                "prefill": enroll.prefill_url(enroll.parse_url(url), UUIDS[index], "Test Student"),
+            }
+        )
+
+    OUT.write_text(json.dumps({"b32": b32, "fuse": fuse, "enroll": enrol}, indent=2) + "\n")
+    print(f"[+] wrote {len(b32)} base32, {len(fuse)} fusion and {len(enrol)} enrollment vectors to {OUT}")
     return 0
 
 

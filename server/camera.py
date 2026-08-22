@@ -9,10 +9,12 @@ Nothing here touches Tk -- that would crash, Tk is single-threaded.
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import os
 import queue
 import threading
+import time
 
 import cv2
 
@@ -46,6 +48,29 @@ def list_cameras(limit: int = 6) -> list[tuple[int, int, int]]:
     return found
 
 
+def preview_ppm(frame, height: int, mirror: bool = True) -> bytes | None:
+    """Scale a BGR frame for the aiming thumbnail and encode it as PPM.
+
+    Mirrored by default: the camera faces the person standing at it, so an
+    unmirrored preview makes them step the wrong way when lining up their phone.
+    This is display only -- the frame handed to the QR detector is never
+    transformed.
+
+    PPM because Tk reads it natively, so there is no PIL round-trip.
+    """
+    if frame is None or height < 1:
+        return None
+    source_height, source_width = frame.shape[:2]
+    if source_height < 1 or source_width < 1:
+        return None
+    scale = height / source_height
+    small = cv2.resize(frame, (max(1, int(source_width * scale)), height))
+    if mirror:
+        small = cv2.flip(small, 1)
+    ok, buf = cv2.imencode(".ppm", small)
+    return buf.tobytes() if ok else None
+
+
 class CameraWorker:
     """Reads frames, decodes any QRs, posts payload strings to `.payloads`.
 
@@ -60,6 +85,11 @@ class CameraWorker:
         self.payloads: queue.Queue[str] = queue.Queue(maxsize=256)
         self.error: str | None = None
         self.frames_seen = 0
+        self.drops = 0
+        self.decodes = 0
+        self.last_decode_at: float | None = None
+        self.actual_size = (0, 0)
+        self._ticks: collections.deque[float] = collections.deque(maxlen=45)
         self._latest = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -74,6 +104,10 @@ class CameraWorker:
         if not self._cap.isOpened():
             self.error = f"cannot open camera {self.index}"
             return False
+        self.actual_size = (
+            int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        )
         self._thread = threading.Thread(target=self._run, name="camera", daemon=True)
         self._thread.start()
         return True
@@ -82,6 +116,20 @@ class CameraWorker:
         with self._lock:
             return None if self._latest is None else self._latest.copy()
 
+    @property
+    def fps(self) -> float:
+        """Rolling capture rate over the last ~45 frames."""
+        with self._lock:
+            ticks = list(self._ticks)
+        if len(ticks) < 2:
+            return 0.0
+        span = ticks[-1] - ticks[0]
+        return (len(ticks) - 1) / span if span > 0 else 0.0
+
+    @property
+    def seconds_since_decode(self) -> float | None:
+        return None if self.last_decode_at is None else time.monotonic() - self.last_decode_at
+
     def _run(self) -> None:
         detector = cv2.QRCodeDetector()
         misses = 0
@@ -89,6 +137,7 @@ class CameraWorker:
             ok, frame = self._cap.read()
             if not ok or frame is None:
                 misses += 1
+                self.drops += 1
                 if misses > 30:
                     self.error = "camera stopped returning frames"
                     break
@@ -97,6 +146,7 @@ class CameraWorker:
             self.frames_seen += 1
             with self._lock:
                 self._latest = frame
+                self._ticks.append(time.monotonic())
 
             try:
                 found, decoded, _points, _ = detector.detectAndDecodeMulti(frame)
@@ -107,6 +157,8 @@ class CameraWorker:
             for text in decoded:
                 if not text:
                     continue
+                self.decodes += 1
+                self.last_decode_at = time.monotonic()
                 with contextlib.suppress(queue.Full):
                     self.payloads.put_nowait(text)
 

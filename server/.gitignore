@@ -1,4 +1,5 @@
 config.json
+classes.json
 data/*.sqlite3
 data/*.csv
 !data/responses.sample.csv

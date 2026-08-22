@@ -45,20 +45,28 @@ def main() -> int:
     print(f"roster       {len(roster)} students from {roster.source}")
     print(f"source QR    {source_text}  ({len(source_text)} chars)\n")
 
-    good = next(s for s in roster.students if not roster.is_muop(s))
-    flagged = next(s for s in roster.students if roster.is_muop(s))
+    if not roster.students:
+        print("[-] no students on this roster -- check the CSV and the class CID.")
+        return 1
+    good = next((s for s in roster.students if not roster.is_muop(s)), roster.students[0])
+    # A roster need not contain a MUoP case; fall back to any student so the
+    # other five verdicts still run.
+    flagged = next((s for s in roster.students if roster.is_muop(s)), None)
 
     other_source, _ = make_source_qr(cfg.pc_secret, derive_cid("IEC-2026-LAB", "2026-01-01", "A"), gen_t=now)
 
     cases = [
         ("① pass",           make_response_qr(cfg.app_secret, source_text, good.uuid, now + 3)),
         ("② user not found", make_response_qr(cfg.app_secret, source_text, UNREGISTERED, now + 3)),
-        ("③ MUoP",           make_response_qr(cfg.app_secret, source_text, flagged.uuid, now + 3)),
+        ("③ MUoP",           make_response_qr(cfg.app_secret, source_text,
+                                              (flagged or good).uuid, now + 3)),
         ("④ timeout",        make_response_qr(cfg.app_secret, source_text, good.uuid, now + cfg.delta_t_max_seconds + 30)),
         ("⑤ wrong session",  make_response_qr(cfg.app_secret, other_source, good.uuid, now + 3)),
         ("⑥ garbage",        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
     ]
 
+    if flagged is None:
+        print("note: no student on this roster has two devices, so ③ cannot fire here.\n")
     width = max(len(name) for name, _ in cases)
     for name, payload in cases:
         result = verifier.verify(payload)

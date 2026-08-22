@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import queue as queue_mod
 import sys
+import time
 import traceback
 import tkinter as tk
 
 from . import camera as camera_mod
+from . import ledger as ledger_mod
 from . import config as config_mod
 from . import roster as roster_mod
 from . import ui
@@ -32,6 +34,7 @@ from .verify import Verifier
 
 POLL_MS = 60
 PREVIEW_HEIGHT = 132
+MIRROR_PREVIEW = True   # front-facing camera: the preview should read as a mirror
 
 
 class OperatorApp:
@@ -43,12 +46,12 @@ class OperatorApp:
         self.c_id = cfg.session.c_id
         self.gen_t = 0
         self.remaining = 0
-        self.seen: set[str] = set()
-        self.present = 0
-        self.flagged = 0
+        self.ledger = ledger_mod.ScanLedger()
         self._preview_image = None  # keep a reference or Tk garbage-collects it
         self._timers: dict[str, str] = {}
         self._alive = True
+        self.last_result = None
+        self.started = time.monotonic()
 
         self.root = tk.Tk()
         self.root.title("mattend - attendance station")
@@ -104,13 +107,22 @@ class OperatorApp:
         self.qr.grid(row=0, column=0, sticky="nsew")
         self.qr.subheading.config(text=f"C_ID 0x{self.c_id:08x}")
 
-        self.preview = tk.Label(left, bg=ui.BG, fg=ui.DIM, font=("TkFixedFont", 10))
-        self.preview.grid(row=1, column=0, pady=(0, 12))
+        # Bottom strip: telemetry fills the width, camera sits in the corner.
+        strip = tk.Frame(left, bg=ui.BG)
+        strip.grid(row=1, column=0, sticky="ew", padx=20, pady=(4, 14))
+        strip.columnconfigure(0, weight=1)
+
+        self.metrics = ui.MetricsPanel(strip)
+        self.metrics.grid(row=0, column=0, sticky="nw")
+
+        self.preview = tk.Label(strip, bg="#000000", fg=ui.DIM, font=("TkFixedFont", 9),
+                                width=24, height=8)
+        self.preview.grid(row=0, column=1, sticky="se", padx=(16, 0))
 
     def _build_right(self):
         right = tk.Frame(self.root, bg=ui.PANEL_BG)
         right.grid(row=0, column=1, sticky="nsew")
-        right.rowconfigure(1, weight=1)
+        right.rowconfigure(2, weight=1)
         right.columnconfigure(0, weight=1)
 
         header = tk.Frame(right, bg=ui.PANEL_BG)
@@ -120,8 +132,12 @@ class OperatorApp:
         self.counts = tk.Label(header, text="", bg=ui.PANEL_BG, fg=ui.DIM, font=("TkFixedFont", 11))
         self.counts.pack(side="right")
 
+        self.banner = ui.TransientBanner(right)
+        self.banner.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        self.banner.grid_remove()
+
         self.queue = ui.VerdictQueue(right)
-        self.queue.grid(row=1, column=0, sticky="nsew")
+        self.queue.grid(row=2, column=0, sticky="nsew")
 
     def _build_status(self):
         self.status = tk.Label(
@@ -164,39 +180,107 @@ class OperatorApp:
     def handle(self, payload: str):
         result = self.verifier.verify(payload)
         key = result.relay.device_uuid or f"bad:{hash(payload) & 0xFFFFFF}"
-        if key in self.seen:
-            return                      # same phone still in frame; don't re-card it
-        self.seen.add(key)
+        outcome = self.ledger.submit(key, result)
 
-        self.queue.push(result)
-        print(f"  {result.line()}", flush=True)
-        if result.recordable:
-            self.store.record(result)
-            if result.verdict == verify_mod.OK:
-                self.present += 1
-            else:
-                self.flagged += 1
-        self.counts.config(text=f"present {self.present}   flagged {self.flagged}   roster {len(self.roster)}")
+        if outcome == ledger_mod.SILENT:
+            return                      # same phone still in frame
+
+        self.last_result = result
+
+        if outcome == ledger_mod.REPEAT:
+            # Already passed. Keep the original verdict, but make the rescan
+            # visible instead of dropping it on the floor.
+            prior = self.ledger.record_for(key)
+            count = self.ledger.count(key)
+            self.banner.show(
+                f"{prior.title} · ALREADY MARKED",
+                f"{prior.subtitle or 'present'} — scanned {count}x, no need to scan again",
+                ui.hex_colour(prior.color),
+            )
+            self.store.record(prior)    # bumps scan_count in the dump
+            print(f"  REPEAT        | {prior.title} | already marked present (scan {count})", flush=True)
+        else:
+            self.queue.push(result)
+            print(f"  {result.line()}", flush=True)
+            if result.recordable:
+                self.store.record(result)
+
+        self.counts.config(
+            text=f"present {self.ledger.present}   flagged {self.ledger.flagged}   roster {len(self.roster)}"
+        )
+        self.refresh_metrics()
 
     def refresh_preview(self):
         frame = self.camera.latest_frame() if self.camera_ok else None
         if frame is not None:
-            import cv2
-
-            height, width = frame.shape[:2]
-            scale = PREVIEW_HEIGHT / height
-            small = cv2.resize(frame, (int(width * scale), PREVIEW_HEIGHT))
-            ok, buf = cv2.imencode(".ppm", small)
-            if ok:
-                # Tk reads PPM natively, so no PIL round-trip is needed here.
-                self._preview_image = tk.PhotoImage(data=buf.tobytes())
-                self.preview.config(image=self._preview_image, text="")
+            data = camera_mod.preview_ppm(frame, PREVIEW_HEIGHT, mirror=MIRROR_PREVIEW)
+            if data:
+                self._preview_image = tk.PhotoImage(data=data)
+                self.preview.config(image=self._preview_image, text="", width=0, height=0)
         elif not self.camera_ok:
             self.preview.config(image="", text=self.camera.error or "no camera")
 
-        note = self.camera.error or f"camera {self.cfg.camera_index} · {self.camera.frames_seen} frames"
-        self.status.config(text=f"{note}    |    q quit · e export · r reload roster · c clear · F11 fullscreen")
+        self.refresh_metrics()
         self._schedule("preview", 200, self.refresh_preview)
+
+    def refresh_metrics(self):
+        cam = self.camera
+        warn = "#d8a020"
+        bad = "#c94a4a"
+
+        width, height = cam.actual_size
+        fps = cam.fps
+        self.metrics.set(
+            "CAMERA",
+            f"idx {self.cfg.camera_index}  {width}x{height}  {fps:5.1f} fps  "
+            f"frames {cam.frames_seen}  drops {cam.drops}",
+            bad if (cam.error or not self.camera_ok) else (warn if fps and fps < 5 else None),
+        )
+
+        since = cam.seconds_since_decode
+        self.metrics.set(
+            "DECODE",
+            f"qr {cam.decodes}  " + ("last never" if since is None else f"last {since:5.1f}s ago")
+            + f"  pending {cam.payloads.qsize()}",
+        )
+        self.metrics.set(
+            "SOURCE",
+            f"v{self.qr.version}  C_ID 0x{self.c_id:08x}  Gen_T {self.gen_t}  rotate in {self.remaining}s",
+        )
+        self.metrics.set(
+            "WINDOW",
+            f"dT max {self.cfg.delta_t_max_seconds}s  skew {self.cfg.clock_skew_tolerance_seconds}s"
+            f"  refresh {self.cfg.qr_rotate_seconds}s",
+        )
+        rejected = len(getattr(self.roster, "rejected", []))
+        self.metrics.set(
+            "ROSTER",
+            f"{self.cfg.session.course_cid}  {len(self.roster)} students  "
+            f"{len(self.roster.muop_report())} muop  {rejected} rejected  "
+            f"dates {getattr(self.roster, 'date_order', '?')}",
+            warn if rejected else None,
+        )
+        self.metrics.set(
+            "TALLY",
+            f"present {self.ledger.present}  flagged {self.ledger.flagged}  "
+            f"devices {self.ledger.devices}  repeats {self.ledger.repeats}  "
+            f"cards {len(self.queue.results)}",
+        )
+        if self.last_result is None:
+            self.metrics.set("LAST", "nothing scanned yet")
+        else:
+            result = self.last_result
+            detail = f"  dT {result.relay.delta_t}s" if result.recordable else ""
+            self.metrics.set(
+                "LAST",
+                f"{result.verdict}  {result.title}{detail}",
+                ui.hex_colour(result.color),
+            )
+        elapsed = int(time.monotonic() - self.started)
+        self.metrics.set("UPTIME", f"{elapsed // 3600:02d}:{elapsed // 60 % 60:02d}:{elapsed % 60:02d}")
+
+        note = cam.error or "running"
+        self.status.config(text=f"{note}   |   q quit · e export · r reload roster · c clear · F11 fullscreen")
 
     # ---------- actions ----------
 
@@ -208,7 +292,7 @@ class OperatorApp:
         try:
             self.roster = roster_mod.load(self.cfg.roster_path, self.cfg.session.course_cid)
             self.verifier.roster = self.roster
-            self.seen.clear()           # let a newly-registered student scan again
+            self.ledger.clear()         # let a newly-registered student scan again
             print(f"[+] roster reloaded: {len(self.roster)} students", flush=True)
         except roster_mod.RosterError as exc:
             print(f"[-] roster reload failed: {exc}", file=sys.stderr, flush=True)
@@ -220,6 +304,7 @@ class OperatorApp:
         if not self._alive:
             return
         self._alive = False
+        self.banner.cancel()
         for timer in self._timers.values():
             try:
                 self.root.after_cancel(timer)
@@ -227,7 +312,10 @@ class OperatorApp:
                 pass
         self.camera.stop()
         self.export()
-        print(f"[+] present {self.present} · flagged {self.flagged} · dump {self.store.path}", flush=True)
+        print(
+            f"[+] present {self.ledger.present} · flagged {self.ledger.flagged}"
+            f" · repeats {self.ledger.repeats} · dump {self.store.path}", flush=True
+        )
         self.store.close()
         self.root.destroy()
 

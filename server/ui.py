@@ -87,6 +87,73 @@ class QRPanel(tk.Frame):
                 )
 
 
+class MetricsPanel(tk.Frame):
+    """Small-print live telemetry. Deliberately dense and monospaced -- this is
+    the corner you stare at when something is not working."""
+
+    ROWS = ("CAMERA", "DECODE", "SOURCE", "WINDOW", "ROSTER", "TALLY", "LAST", "UPTIME")
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, bg=BG, **kwargs)
+        self.values: dict[str, tk.Label] = {}
+        for index, key in enumerate(self.ROWS):
+            tk.Label(self, text=key, bg=BG, fg="#4e535b", font=("TkFixedFont", 8, "bold"),
+                     anchor="w", width=8).grid(row=index, column=0, sticky="w", padx=(0, 12), pady=1)
+            value = tk.Label(self, text="-", bg=BG, fg=DIM, font=("TkFixedFont", 9), anchor="w")
+            value.grid(row=index, column=1, sticky="w")
+            self.values[key] = value
+        self.columnconfigure(1, weight=1)
+
+    def set(self, key: str, text: str, colour: str | None = None) -> None:
+        label = self.values.get(key)
+        if label is not None:
+            label.config(text=text, fg=colour or DIM)
+
+
+class TransientBanner(tk.Frame):
+    """A card that appears, says one thing, and vanishes.
+
+    Used for events that must not enter the verdict queue -- a student who has
+    already passed scanning again shouldn't push four real verdicts down the
+    screen, but silently ignoring them leaves both them and the operator
+    guessing whether it registered.
+    """
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, bg=PANEL_BG, **kwargs)
+        self._timer: str | None = None
+        self._bar = tk.Frame(self, bg=PANEL_BG, width=8)
+        self._bar.pack(side="left", fill="y")
+        body = tk.Frame(self, bg="#22242a")
+        body.pack(side="left", fill="both", expand=True)
+        self._title = tk.Label(body, text="", bg="#22242a", fg=FG,
+                               font=("TkDefaultFont", 13, "bold"), anchor="w")
+        self._title.pack(fill="x", padx=14, pady=(9, 0))
+        self._detail = tk.Label(body, text="", bg="#22242a", fg=DIM,
+                                font=("TkDefaultFont", 10), anchor="w")
+        self._detail.pack(fill="x", padx=14, pady=(0, 9))
+
+    def show(self, title: str, detail: str, colour: str, ms: int = 3500) -> None:
+        self._title.config(text=title, fg=colour)
+        self._detail.config(text=detail)
+        self._bar.config(bg=colour)
+        self.grid()
+        self.cancel()
+        self._timer = self.after(ms, self.hide)
+
+    def hide(self) -> None:
+        self._timer = None
+        self.grid_remove()
+
+    def cancel(self) -> None:
+        if self._timer is not None:
+            try:
+                self.after_cancel(self._timer)
+            except tk.TclError:
+                pass
+            self._timer = None
+
+
 class VerdictQueue(tk.Frame):
     """Newest verdict on top. The first BIG_CARDS are large; everything behind
     them shrinks to one line so more students stay visible. Cards that no longer

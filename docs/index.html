@@ -11,6 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="protocol.js"></script>
+    <script src="enroll.js"></script>
     <link rel="manifest" href="manifest.json">
     
     <style>
@@ -29,15 +30,36 @@
         .fusion-status { font-size: 13px; color: #666; margin: 10px 0 0; }
         .fusion-status.stale { color: #c82828; font-weight: bold; }
         .fusion-status.error { color: #c82828; }
+        .class-list { list-style: none; padding: 0; margin: 10px 0 0; text-align: left; }
+        .class-list li { background: #eee; padding: 8px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+        .class-list li small { color: #777; display: block; }
+        .enroll-card { border-left: 5px solid #0066cc; text-align: left; }
+        .enroll-card h2 { margin-top: 0; }
+        .enroll-what { background: #eef4fb; padding: 12px; border-radius: 4px; font-size: 13px; margin-bottom: 14px; }
+        .enroll-what b { display: block; font-size: 16px; margin-bottom: 4px; }
+        .muted-btn { background: #888; }
+        .empty-hint { color: #666; font-size: 13px; }
     </style>
 </head>
 <body>
 
+    <div id="enroll-section" class="card enroll-card hidden">
+        <h2>Join a class</h2>
+        <div class="enroll-what">
+            <b id="enroll-label">—</b>
+            <span id="enroll-cid"></span><br>
+            <span id="enroll-host" style="color:#555"></span>
+        </div>
+        <input type="text" id="enroll-name" placeholder="Enter Full Name (as on ERP)" required>
+        <button id="enroll-btn">Register for this class</button>
+        <button id="enroll-cancel" class="muted-btn">Cancel</button>
+    </div>
+
     <div id="registration-section" class="card hidden">
-        <h2>System Registration</h2>
-        <p>No local identity found. Please register this device to the student network.</p>
-        <input type="text" id="student-name" placeholder="Enter Full Name" required>
-        <button id="register-btn">Register Identity</button>
+        <h2>No class joined yet</h2>
+        <p class="empty-hint">Scan your teacher's <strong>enrollment QR</strong> to join a class.
+           You only need to do this once per course.</p>
+        <button id="enroll-scan-btn">Scan enrollment QR</button>
     </div>
 
     <div id="identity-section" class="card hidden">
@@ -45,10 +67,14 @@
         <p><strong>Name:</strong> <span id="display-name"></span></p>
         <p><strong>Local UUID:</strong></p>
         <div class="data-dump" id="uuid-display"></div>
+        <p style="margin-bottom:0"><strong>Classes joined:</strong></p>
+        <ul class="class-list" id="class-list"></ul>
     </div>
 
     <div id="scanner-section" class="card hidden">
         <h3>1. Capture Source QR</h3>
+        <p class="empty-hint">Point at the classroom screen. Scanning an enrollment QR here
+           joins another class instead.</p>
         <button id="start-scan-btn">Start Camera</button>
         <div id="reader"></div>
     </div>
@@ -71,48 +97,100 @@
         let userName = localStorage.getItem('local_user_name');
         
         const regSection = document.getElementById('registration-section');
+        const enrollSection = document.getElementById('enroll-section');
         const idSection = document.getElementById('identity-section');
         const scanSection = document.getElementById('scanner-section');
         const resultSection = document.getElementById('result-section');
         const nameInput = document.getElementById('student-name');
         
         function initSystem() {
-            if (!deviceUUID || !userName) {
+            // The device identity is per *device*, not per class -- one UUID,
+            // registered into as many courses as the student takes.
+            if (!deviceUUID) {
+                deviceUUID = crypto.randomUUID();
+                localStorage.setItem('local_mobile_identity', deviceUUID);
+            }
+            const classes = MattendEnroll.registered();
+
+            regSection.classList.add('hidden');
+            idSection.classList.add('hidden');
+            scanSection.classList.add('hidden');
+
+            if (classes.length === 0) {
                 regSection.classList.remove('hidden');
             } else {
                 idSection.classList.remove('hidden');
                 scanSection.classList.remove('hidden');
-                document.getElementById('display-name').innerText = userName;
-                const maskedUUID = `********-****-****-****-******${deviceUUID.slice(-4)}`;
-                document.getElementById('uuid-display').innerText = maskedUUID;
+                document.getElementById('display-name').innerText = userName || '—';
+                document.getElementById('uuid-display').innerText =
+                    `********-****-****-****-******${deviceUUID.slice(-4)}`;
+                const list = document.getElementById('class-list');
+                list.innerHTML = "";
+                classes.forEach((row) => {
+                    const item = document.createElement('li');
+                    item.innerHTML = `<strong>${row.label}</strong><small>${row.courseCid}</small>`;
+                    list.appendChild(item);
+                });
             }
-            
-            // Detect iOS for manual PWA instruction
-            const isIos = () => {
-                const userAgent = window.navigator.userAgent.toLowerCase();
-                return /iphone|ipad|ipod/.test(userAgent);
-            };
-            // Detect if already installed (standalone mode)
-            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+            const isIos = () => /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                || window.navigator.standalone;
             if (isIos() && !isStandalone) {
                 document.getElementById('ios-instruction').classList.remove('hidden');
             }
         }
 
-        document.getElementById('register-btn').addEventListener('click', () => {
-            const inputName = nameInput.value.trim();
-            if (!inputName) { alert("Please enter your full name."); return; }
-            deviceUUID = crypto.randomUUID();
-            userName = inputName;
-            localStorage.setItem('local_mobile_identity', deviceUUID);
-            localStorage.setItem('local_user_name', userName);
-            
-            const formBaseURL = "https://docs.google.com/forms/d/e/1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ/viewform?usp=pp_url";
-            const queryParams = `&entry.954365518=${encodeURIComponent(deviceUUID)}&entry.1848492482=${encodeURIComponent(userName)}`;
-            window.open(formBaseURL + queryParams, '_blank');
-            
+        // ---- enrollment ----
+
+        let pendingClass = null;
+
+        function offerEnrollment(klass) {
+            pendingClass = klass;
+            document.getElementById('enroll-label').innerText = klass.label || klass.courseCid;
+            document.getElementById('enroll-cid').innerText = klass.courseCid;
+            document.getElementById('enroll-host').innerText =
+                'submits to docs.google.com/forms/…' + klass.formId.slice(-6);
+            document.getElementById('enroll-name').value = userName || '';
             regSection.classList.add('hidden');
+            idSection.classList.add('hidden');
+            scanSection.classList.add('hidden');
+            resultSection.classList.add('hidden');
+            enrollSection.classList.remove('hidden');
+        }
+
+        document.getElementById('enroll-btn').addEventListener('click', () => {
+            const name = document.getElementById('enroll-name').value.trim();
+            if (!name) { alert("Please enter your full name."); return; }
+            if (!pendingClass) { return; }
+
+            userName = name;
+            localStorage.setItem('local_user_name', userName);
+            MattendEnroll.remember(pendingClass);
+
+            window.open(MattendEnroll.prefillUrl(pendingClass, deviceUUID, userName), '_blank');
+
+            // Drop ?e=... so a reload doesn't re-offer the same class.
+            if (window.history.replaceState) {
+                window.history.replaceState({}, '', window.location.pathname);
+            }
+            pendingClass = null;
+            enrollSection.classList.add('hidden');
             initSystem();
+        });
+
+        document.getElementById('enroll-cancel').addEventListener('click', () => {
+            pendingClass = null;
+            if (window.history.replaceState) {
+                window.history.replaceState({}, '', window.location.pathname);
+            }
+            enrollSection.classList.add('hidden');
+            initSystem();
+        });
+
+        document.getElementById('enroll-scan-btn').addEventListener('click', () => {
+            scanSection.classList.remove('hidden');
+            startScanBtn.click();
         });
 
         const html5QrCode = new Html5Qrcode("reader");
@@ -126,7 +204,17 @@
                 (decodedText) => {
                     html5QrCode.stop().then(() => {
                         startScanBtn.innerText = "Start Camera";
-                        executeFusionPipeline(decodedText);
+                        // One scanner, two kinds of QR: an enrollment link joins a
+                        // class, anything else is treated as a source QR.
+                        if (MattendEnroll.looksLikeEnrollment(decodedText)) {
+                            try {
+                                offerEnrollment(MattendEnroll.parse(decodedText));
+                            } catch (err) {
+                                alert("That enrollment QR is not valid: " + err.message);
+                            }
+                        } else {
+                            executeFusionPipeline(decodedText);
+                        }
                     });
                 },
                 (err) => {}
@@ -214,7 +302,14 @@
             navigator.serviceWorker.register('sw.js');
         }
 
-        initSystem();
+        const openedWith = MattendEnroll.fromLocation();
+        if (openedWith) {
+            deviceUUID = deviceUUID || crypto.randomUUID();
+            localStorage.setItem('local_mobile_identity', deviceUUID);
+            offerEnrollment(openedWith);
+        } else {
+            initSystem();
+        }
     </script>
 </body>
 </html>

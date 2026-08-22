@@ -107,5 +107,31 @@
       "capT": 1700001831,
       "expected": "UIM3ES7HP6NMEASKT7QAQAEAYTSEMLM2DEGVJBHKS2I7E2RZHX7DXKN6J6VKAQHTEA4Q"
     }
+  ],
+  "enroll": [
+    {
+      "url": "https://luciuspertis.github.io/mattend-0/?e=1&cid=PSP-LAB-SEC-D&l=PSP+Lab+Sec+D&f=1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ&u=954365518&n=1848492482&c=1848492483",
+      "parsed": {
+        "course_cid": "PSP-LAB-SEC-D",
+        "label": "PSP Lab Sec D",
+        "form_id": "1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ",
+        "entry_uuid": "954365518",
+        "entry_name": "1848492482",
+        "entry_cid": "1848492483"
+      },
+      "prefill": "https://docs.google.com/forms/d/e/1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ/viewform?usp=pp_url&entry.954365518=11111111-1111-4111-8111-111111111111&entry.1848492482=Test+Student&entry.1848492483=PSP-LAB-SEC-D"
+    },
+    {
+      "url": "https://luciuspertis.github.io/mattend-0/?e=1&cid=DS-LAB-B&l=Data+Structures+%26+Algo&f=1FAIpQLSshortIdHere_00&u=11&n=22",
+      "parsed": {
+        "course_cid": "DS-LAB-B",
+        "label": "Data Structures & Algo",
+        "form_id": "1FAIpQLSshortIdHere_00",
+        "entry_uuid": "11",
+        "entry_name": "22",
+        "entry_cid": ""
+      },
+      "prefill": "https://docs.google.com/forms/d/e/1FAIpQLSshortIdHere_00/viewform?usp=pp_url&entry.11=0f8fad5b-d9cb-469f-a165-70867728950e&entry.22=Test+Student"
+    }
   ]
 }

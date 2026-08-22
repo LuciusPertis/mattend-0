@@ -18,11 +18,20 @@ Miss any of those and it doesn't count.
 
 ---
 
-## The three pieces
+## Three kinds of QR
+
+| QR | when | what it carries |
+|---|---|---|
+| **Enrollment** | once per course | which class, and which Google Form to register on |
+| **Source** | every few seconds in class | the room and the current time, encrypted |
+| **Response** | on the student's phone | the source blob + their device id + when they scanned |
+
+## The pieces
 
 | piece | runs on | what it is |
 |---|---|---|
-| **The station** | your lab machine | `python3 -m server.app` — one window: QR on the left, verifications on the right |
+| **Class Manager** | your machine, once per class | `python3 -m server.admin` — add classes, link your Google Form, print the enrollment QR |
+| **The station** | your lab machine, every class | `python3 -m server.app` — one window: QR on the left, verifications on the right |
 | **The phone app** | student's phone | a web page at `https://<you>.github.io/mattend-0/` — scans QR #1, produces QR #2 |
 
 That's it for the normal case — **one command**. The station shows the QR *and*
@@ -101,35 +110,69 @@ python3 -m server.make_vectors     # regenerate whenever you change the secret
 Every line must say PASS. If any fails, the two halves disagree and no phone
 will verify.
 
-### 4. Collect registrations
+### 4. Add your classes
 
-Students open the app, enter their name, and it sends them to your Google Form
-with their device UUID prefilled. Your form needs these columns:
-
-```
-Timestamp | Email | Name | UUID | CID
+```bash
+python3 -m server.admin
 ```
 
-`CID` is the course code, e.g. `IEC-2026-LAB`.
+Set **App URL** to where you published the app, then **New class**:
+
+- **Class name** and **Course CID** — the CID must match the `Class_ID` students
+  submit on your form.
+- **Google Form** — this is the only fiddly bit, and the Class Manager does the
+  fiddly part for you. In your form: **⋮ → Get pre-filled link**, type the words
+  `UUID`, `NAME` and `CID` into the matching questions, **Get link → Copy link**,
+  then paste it in and press **Read fields**. It reads out the `entry.NNN` ids
+  Google never shows you and assigns them by the words you typed.
+
+Press **Save class** and the **enrollment QR** appears on the right. **Save PNG**
+to print it, or **Show fullscreen** to put it on the projector.
+
+Your classes live in `server/classes.json`; you never have to edit it by hand.
+
+### 5. Students join
+
+They scan the enrollment QR — with their phone camera, or with the app's own
+scanner if they already have it. Either way the app opens, shows which class
+they're joining, asks for their name, and sends them to *your* form with their
+device id prefilled.
+
+One device, many classes: the UUID is created once and reused, so a student
+scans a different enrollment QR per course and the app remembers them all.
+
+Your form needs a column for each of:
+
+| meaning | headers that match | example |
+|---|---|---|
+| when | `Timestamp` | `8/20/2026 11:00:09` |
+| who | anything with **email** | `pmr2025001@iiita.ac.in` |
+| device | `UUID`, `msL-key`, anything with **key** or **device** | `f76b4844-25c3-…` |
+| name | anything with **name** | `Shubhadeep Sarkar` |
+| class | `CID`, `Class_ID`, anything with **class** / **course** / **section** | `PSP-LAB-SEC-D` |
+
+Header matching is fuzzy and order-independent, so renaming a form question
+won't break the loader. Two things it handles for you:
+
+- **A junk device column.** A student who types anything that isn't a real UUID
+  is dropped and counted, not loaded. This matters: keeping it would inflate
+  that student's device count and wrongly flag them as MUoP.
+- **A stale header row** above the form's own header. It uses the row directly
+  above the first row containing an email, so a leftover label row that lists
+  the columns in a *different order* can't silently swap names and UUIDs.
+
+The roll number on the verdict cards comes from the email local part —
+`pmr2025001@…` renders as `PMR 2025 001`.
 
 ---
 
 ## Every class
 
-### 1. Set the session
+### 1. Pick the class
 
-Edit `server/config.json`:
-
-```json
-"session": {
-  "course_cid": "IEC-2026-LAB",
-  "date": "2026-08-21",
-  "slot": "A"
-}
-```
-
-`course_cid` must match what students typed in the form. **Change the date each
-class** — that's what stops yesterday's QR from working today.
+Open the Class Manager, select the class, press **▶ Launch Station**. That's it —
+**the date is always today**, so nothing needs editing between classes. It's
+still what stops yesterday's QR working today.
 
 ```bash
 python3 -m server.config      # prints the session it resolved, sanity-check it
@@ -142,11 +185,25 @@ Google Form → Responses → download CSV → save as `server/data/responses.cs
 ### 3. Launch
 
 ```bash
-python3 -m server.app
+python3 -m server.admin       # pick a class, press Launch Station
+python3 -m server.app         # or go straight to the active class
 ```
 
 The window opens maximised but stays a normal window, so you can minimise it.
 Point the projector at the left half and the webcam at the queue.
+
+### Scanning twice
+
+Three different things can look like "that phone again", and they behave
+differently:
+
+| situation | what happens |
+|---|---|
+| the phone is **still in front of the camera** | nothing, silently — no card spam |
+| they **already passed** and scan again later | a green *ALREADY MARKED* card appears above the queue and vanishes after a few seconds; their pass is untouched |
+| they **previously failed** (timeout, not registered) and retry | a fresh verdict, exactly as if it were their first scan — so *TIMEOUT — TRY AGAIN* actually works |
+
+A pass is never downgraded by a later scan, and nobody is ever counted twice.
 
 | key | does |
 |---|---|

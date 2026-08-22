@@ -1,0 +1,22 @@
+{
+  "_comment": "Written by `python3 -m server.admin`. One entry per class you teach.",
+  "active": "psp-lab-sec-d",
+  "classes": {
+    "psp-lab-sec-d": {
+      "course_cid": "PSP-LAB-SEC-D",
+      "label": "PSP Lab · Section D",
+      "form_id": "1FAIpQLSf...your google form id...",
+      "entries": {
+        "uuid": "954365518",
+        "name": "1848492482",
+        "cid": "1848492483"
+      },
+      "roster_csv": "data/psp-lab-sec-d.csv",
+      "slot": "A",
+      "date": "today",
+      "delta_t_max_seconds": 15,
+      "clock_skew_tolerance_seconds": 5,
+      "qr_rotate_seconds": 4
+    }
+  }
+}
