@@ -227,6 +227,19 @@ capture and decode on its own thread and posts payload strings to a
 `queue.Queue`; `app.drain()` empties it on a 60 ms `after` timer. Nothing
 outside the main thread ever touches a Tk widget.
 
+### Client versioning
+
+`docs/version.js` and `docs/sw.js` carry the same version literal, kept in step
+by `tools/bump_version.py` and asserted by `VersionTests`. The pre-commit hook in
+`tools/hooks/` bumps the patch whenever anything else under `docs/` is staged.
+
+The service worker was cache-first with no `activate` handler, which meant a
+phone served the first build it ever saw indefinitely — the reason a protocol
+change could appear to work everywhere except on the devices already in use. It
+is now network-first with cache fallback, `CACHE_NAME` is derived from the
+version, old caches are deleted on activate, and registration passes
+`updateViaCache: 'none'` so `sw.js` itself is never served from the HTTP cache.
+
 ### Why there is no OpenCV window
 
 `cv2.imshow` is not used anywhere. On an OpenCV built against Qt5, a window

@@ -10,6 +10,7 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="version.js"></script>
     <script src="protocol.js"></script>
     <script src="enroll.js"></script>
     <link rel="manifest" href="manifest.json">
@@ -39,6 +40,8 @@
         .enroll-what b { display: block; font-size: 16px; margin-bottom: 4px; }
         .muted-btn { background: #888; }
         .empty-hint { color: #666; font-size: 13px; }
+        .version-tag { color: #aaa; font-size: 11px; margin-top: 18px; letter-spacing: 0.5px; }
+        .version-tag b { color: #666; font-weight: normal; }
     </style>
 </head>
 <body>
@@ -93,6 +96,7 @@
 
     <button id="pwa-install-btn" class="hidden">Install as App</button>
     <p id="ios-instruction" class="ios-hint hidden">Using iOS? Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+    <p class="version-tag">mattend <b id="version-tag">—</b></p>
 
     <script>
         let deviceUUID = localStorage.getItem('local_mobile_identity');
@@ -331,8 +335,21 @@
             }
         });
 
+        document.getElementById('version-tag').innerText =
+            'v' + (window.MATTEND_VERSION || '?');
+
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
+            // updateViaCache:'none' stops the browser serving a cached sw.js,
+            // which is how a phone gets stuck on an old build in the first place.
+            navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+                .then((registration) => {
+                    registration.update();
+                    registration.addEventListener('updatefound', () => {
+                        const tag = document.getElementById('version-tag');
+                        if (tag) tag.innerText += ' (updating…)';
+                    });
+                })
+                .catch(() => {});
         }
 
         const openedWith = MattendEnroll.fromLocation();

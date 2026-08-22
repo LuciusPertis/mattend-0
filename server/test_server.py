@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import sys
 import tempfile
 import time
 import unittest
@@ -275,6 +277,70 @@ class RealExportTests(unittest.TestCase):
     def test_no_header_at_all_is_an_error(self):
         with self.assertRaises(RosterError):
             self.write(self.BODY)
+
+
+class VersionTests(unittest.TestCase):
+    """The version exists to stop phones running stale cached code, so the two
+    places it is written must never disagree."""
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def setUp(self):
+        sys.path.insert(0, str(self.ROOT / "tools"))
+        import bump_version
+
+        self.bump = bump_version
+
+    def tearDown(self):
+        sys.path.remove(str(self.ROOT / "tools"))
+
+    def test_version_js_and_sw_js_agree(self):
+        self.assertEqual(self.bump.read_version(), self.bump.sw_version())
+
+    def test_version_is_semver(self):
+        self.assertRegex(self.bump.read_version(), r"^\d+\.\d+\.\d+$")
+
+    def test_the_page_and_the_worker_both_load_it(self):
+        index = (self.ROOT / "docs" / "index.html").read_text()
+        self.assertIn('src="version.js"', index)
+        self.assertIn("MATTEND_VERSION", index)
+        worker = (self.ROOT / "docs" / "sw.js").read_text()
+        self.assertIn("const VERSION", worker)
+        self.assertIn("CACHE_NAME", worker)
+
+    def test_worker_no_longer_serves_stale_code(self):
+        """Cache-first was the bug: a phone kept the first build it ever saw."""
+        worker = (self.ROOT / "docs" / "sw.js").read_text()
+        self.assertIn("addEventListener(\"activate\"", worker)
+        self.assertIn("caches.delete", worker)
+        self.assertIn("await fetch(request)", worker)
+
+    def test_cache_name_is_derived_from_the_version(self):
+        worker = (self.ROOT / "docs" / "sw.js").read_text()
+        self.assertIn("`mattend-${VERSION}`", worker)
+
+    def test_bump_arithmetic(self):
+        self.assertEqual(self.bump.bump("4.3.11", "patch"), "4.3.12")
+        self.assertEqual(self.bump.bump("4.3.11", "minor"), "4.4.0")
+        self.assertEqual(self.bump.bump("4.3.11", "major"), "5.0.0")
+        self.assertEqual(self.bump.bump("4.9.9", "minor"), "4.10.0")
+
+    def test_set_rejects_nonsense(self):
+        with self.assertRaises(self.bump.VersionError):
+            self.bump.write_version("4.3")
+        with self.assertRaises(self.bump.VersionError):
+            self.bump.write_version("v4.3.11")
+
+    def test_shell_is_cached_including_version_js(self):
+        worker = (self.ROOT / "docs" / "sw.js").read_text()
+        for asset in ("./index.html", "./version.js", "./protocol.js", "./enroll.js"):
+            self.assertIn(asset, worker)
+
+    def test_hook_is_executable_and_targets_docs(self):
+        hook = self.ROOT / "tools" / "hooks" / "pre-commit"
+        self.assertTrue(hook.exists())
+        self.assertTrue(os.access(hook, os.X_OK), "pre-commit hook is not executable")
+        self.assertIn("-- docs/", hook.read_text())
 
 
 class HeaderAmbiguityTests(unittest.TestCase):

@@ -353,12 +353,43 @@ that student's phone. Pressing `k` kills any such window instantly.
 
 ---
 
+## Versioning the student app
+
+The app shows its version at the bottom of the page — `mattend v4.3.11`. Check
+it during a live test: if a phone shows an older number than `docs/version.js`,
+it is running cached code.
+
+**Any change under `docs/` bumps the patch version automatically.** Install the
+hook once per clone:
+
+```bash
+git config core.hooksPath tools/hooks
+```
+
+After that, committing a change to `docs/` rewrites `docs/version.js` and
+`docs/sw.js` and stages them. Manual control when you want it:
+
+```bash
+python3 tools/bump_version.py --show     # what is it now
+python3 tools/bump_version.py            # patch
+python3 tools/bump_version.py --minor    # or --major, or --set 5.0.0
+```
+
+This exists because the service worker used to be **cache-first with no
+cleanup**: once a phone loaded the app it kept that code forever, so protocol
+changes were invisible on exactly the devices already in use. Fetching is now
+network-first with the cache as an offline fallback, the cache is named after
+the version, and old caches are deleted on activate. A phone can still be one
+load behind — but never more, and the version tag tells you.
+
 ## Layout
 
 ```
-docs/         the phone app — this folder is what GitHub Pages publishes
-server/       both PC halves and the verification logic
-qr*.py        early latency benchmarks, not part of the system
+docs/           the phone app — this folder is what GitHub Pages publishes
+server/         both PC halves and the verification logic
+tools/          version bumping and the git hook that runs it
+FORM-SETUP.md   what your Google Form needs to look like
+qr*.py          early latency benchmarks, not part of the system
 ```
 
 Design notes, the crypto, and the verdict precedence rules are in

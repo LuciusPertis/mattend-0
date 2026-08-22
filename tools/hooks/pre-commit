@@ -1,0 +1,22 @@
+#!/bin/sh
+# Bump the student app's version whenever docs/ changes.
+#
+# A change to docs/ that does not move the version leaves every phone serving
+# the cached previous build -- silently, and only on the devices that already
+# had it. That is the failure this hook exists to make impossible.
+#
+# Install:  git config core.hooksPath tools/hooks
+# Skip once: git commit --no-verify
+
+changed=$(git diff --cached --name-only --diff-filter=ACMR -- docs/ \
+          | grep -v -e '^docs/version\.js$' -e '^docs/sw\.js$')
+
+[ -z "$changed" ] && exit 0
+
+python3 tools/bump_version.py --patch --quiet || {
+    echo "pre-commit: version bump failed; commit aborted" >&2
+    exit 1
+}
+
+git add docs/version.js docs/sw.js
+echo "pre-commit: docs/ changed -> version is now $(python3 tools/bump_version.py --show)"
