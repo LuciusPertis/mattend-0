@@ -15,13 +15,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import time
+
 from .config import Config
+from .keys import BadSignature, KeyRing, load_public_key
 from .protocol import BadPacket, BadPayload, Relay, open_response_qr
 from .roster import Roster, Student
 
 OK = "OK"
 UNF = "UNF"
 MUOP = "MUOP"
+BAD_SIG = "BAD_SIG"
 TO = "TO"
 WRONG_SESSION = "WRONG_SESSION"
 UNREADABLE = "UNREADABLE"
@@ -31,12 +35,14 @@ COLORS = {
     OK: (34, 160, 74),             # green
     UNF: (130, 130, 130),          # grey
     MUOP: (200, 40, 40),           # red
+    BAD_SIG: (170, 30, 90),        # magenta -- an attack signal, not a retry
     TO: (222, 170, 20),            # yellow
     WRONG_SESSION: (90, 90, 110),  # slate
     UNREADABLE: (70, 70, 70),      # near-black
 }
 
-_NULL_RELAY = Relay(device_uuid="", cap_t=0, c_id=0, gen_t=0)
+_NULL_RELAY = Relay(device_uuid="", cap_t=0, sub_t=0, c_id=0, gen_t=0,
+                    signature=b"", signed_bytes=b"")
 
 
 @dataclass
@@ -54,7 +60,7 @@ class Result:
     @property
     def recordable(self) -> bool:
         """Whether this belongs in the local dump -- i.e. we know who it was."""
-        return self.verdict in (OK, MUOP, TO)
+        return self.verdict in (OK, MUOP, TO, BAD_SIG)
 
     @property
     def color(self) -> tuple[int, int, int]:
@@ -76,6 +82,7 @@ class Result:
             OK: "PASS",
             UNF: "X",
             MUOP: "MUoP REPORTED",
+            BAD_SIG: "DEVICE KEY MISMATCH",
             TO: "TIMEOUT - TRY AGAIN",
             WRONG_SESSION: "WRONG SESSION",
             UNREADABLE: "UNREADABLE",
@@ -85,7 +92,7 @@ class Result:
         parts = [self.verdict.ljust(13), self.title]
         if self.subtitle:
             parts.append(self.subtitle)
-        if self.verdict in (OK, MUOP, TO):
+        if self.verdict in (OK, MUOP, TO, BAD_SIG):
             parts.append(f"dT={self.relay.delta_t}s")
         if self.detail and self.student:
             parts.append(f"({self.detail})")
@@ -93,16 +100,20 @@ class Result:
 
 
 class Verifier:
-    def __init__(self, config: Config, roster: Roster):
+    def __init__(self, config: Config, roster: Roster, pc_keys: KeyRing | None = None):
         self.config = config
         self.roster = roster
         self.expected_c_id = config.session.c_id
+        # A ring rather than a bare key, so the station can rotate P_c mid-class.
+        self.pc_keys = pc_keys or KeyRing.fixed(config.pc_secret)
 
-    def verify(self, scanned_text: str) -> Result:
+    def verify(self, scanned_text: str, now: int | None = None) -> Result:
         course = self.config.session.course_cid
+        now = int(time.time()) if now is None else now
+        skew = self.config.clock_skew_tolerance_seconds
 
         try:
-            relay = open_response_qr(self.config.pc_secret, self.config.app_secret, scanned_text)
+            relay = open_response_qr(self.pc_keys, self.config.app_secret, scanned_text)
         except (BadPacket, BadPayload, ValueError) as exc:
             return Result(UNREADABLE, _NULL_RELAY, course, detail=str(exc))
 
@@ -118,14 +129,53 @@ class Verifier:
         if student is None:
             return Result(UNF, relay, course, detail=f"uuid {relay.device_uuid[:8]}… not registered for {course}")
 
+        # Signature before anything else about this student: if it does not hold,
+        # the UUID is not evidence of who they are, so nothing after it means much.
+        signature_note = self._check_signature(relay, student)
+        if signature_note is not None:
+            return Result(BAD_SIG, relay, course, student=student, detail=signature_note)
+
         if self.roster.is_muop(student):
             devices = self.roster.devices_for(student.email)
             return Result(MUOP, relay, course, student=student, detail=f"{len(devices)} devices on {student.email}")
 
-        delta_t = relay.delta_t
-        if delta_t < -self.config.clock_skew_tolerance_seconds:
-            return Result(TO, relay, course, student=student, detail=f"clock skew {delta_t}s")
-        if delta_t > self.config.delta_t_max_seconds:
-            return Result(TO, relay, course, student=student, detail=f"ΔT {delta_t}s > {self.config.delta_t_max_seconds}s")
+        stale = self._check_timing(relay, now, skew)
+        if stale is not None:
+            return Result(TO, relay, course, student=student, detail=stale)
 
-        return Result(OK, relay, course, student=student, detail=f"ΔT {delta_t}s")
+        return Result(OK, relay, course, student=student,
+                      detail=f"ΔT {relay.delta_t}s · shown {relay.age(now)}s ago")
+
+    def _check_signature(self, relay: Relay, student: Student) -> str | None:
+        """None if acceptable, else why it is not."""
+        if not student.pubkey:
+            if self.config.require_signature:
+                return "no device key registered -- this student must re-enrol"
+            return None                     # pre-signing registration, still allowed
+        if not relay.is_signed:
+            return "device key registered but the reply was unsigned"
+        try:
+            relay.verify_device(load_public_key(student.pubkey))
+        except BadSignature as exc:
+            return str(exc)
+        return None
+
+    def _check_timing(self, relay: Relay, now: int, skew: int) -> str | None:
+        """The three clocks, each closing a different hole."""
+        if relay.key_generation > 0:
+            return "source QR predates the key reset -- scan the screen again"
+
+        delta_t = relay.delta_t
+        if delta_t < -skew:
+            return f"clock skew {delta_t}s"
+        if delta_t > self.config.delta_t_max_seconds:
+            return f"ΔT {delta_t}s > {self.config.delta_t_max_seconds}s (stale source QR)"
+
+        age = relay.age(now)
+        if age > self.config.submit_window_seconds + skew:
+            return f"reply is {age}s old > {self.config.submit_window_seconds}s (not a live screen)"
+
+        journey = relay.journey(now)
+        if journey > self.config.capture_window_seconds + skew:
+            return f"{journey}s since capture > {self.config.capture_window_seconds}s"
+        return None

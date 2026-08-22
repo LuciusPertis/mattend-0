@@ -90,46 +90,53 @@
   ],
   "fuse": [
     {
-      "source": "E7PW2WOD5NME6EHJFQJBT33O",
+      "source": "2OZWZXMHX4PSKUYTQDXW46K2",
       "uuid": "11111111-1111-4111-8111-111111111111",
       "capT": 1700000007,
-      "expected": "RPGYQJHMNSWAWWSI7ZGANC7R32QDOMB3L6LYNNQPHJJ4XN7VNO3V2E6ZURAAF3PZAUSQ"
+      "subT": 1700000010,
+      "expected": "GMDVAWZH64LKM7DQU2LG5ZTITKIBN7HH5CCKPVK4D3FUKZT3LAYRUS6VXS22TDVA5LCTR7PYCAN56YVAGESFDTD5CG3D7Z2VLLFIS75VXCI3GRQ4MWXC5JTFKS3OVQBJFRCTYWIUQLSKJA2H6U3HI6XL2JISK3E4H6NSW2LOOI2XVFIL"
     },
     {
-      "source": "HPMIOKGEPBCZRVHOPGZWJ2XW",
+      "source": "RE5GSHXTFLTAVUO72VCPAQ4S",
       "uuid": "0f8fad5b-d9cb-469f-a165-70867728950e",
       "capT": 1700000919,
-      "expected": "BRTX3IRAGL5D3UQWUU7N4H2S553YRQGDGAXGLIZ35YZQF7NNY57YSAIX3VCOSSFOFCZQ"
+      "subT": 1700000923,
+      "expected": "IDTOJ6LDHU2WDVCZQC4CVI6JHDMTAW2HRIO44OX4K7FS2LDCF3CXKLEIUVVMLWHYOH76KBOSVWRDZUUGWJZV6DEJ6Y73JKUFNO3WQCRESSSIYZKQMLOEMNYZ2DBELCKWCF46QKHKMUTAR4UBY5J7GT4Z5NRO65WM5H4XPFLUG62SKQEO"
     },
     {
-      "source": "SPBCZRCNM4KBNEDRDQK24JHK",
+      "source": "BMPBKTIWHB5YWGKO6LPWREHO",
       "uuid": "ffffffff-ffff-4fff-bfff-ffffffffffff",
       "capT": 1700001831,
-      "expected": "UIM3ES7HP6NMEASKT7QAQAEAYTSEMLM2DEGVJBHKS2I7E2RZHX7DXKN6J6VKAQHTEA4Q"
+      "subT": 1700001836,
+      "expected": "Q53MKTBZ4LXZEKKYLXHU4U26BKD3Z2PKCTEAAPJS5UQZ2HZ4JMBEA7VQVUM6JUN7P57HPDOMPY6I6XC4FDT26PXZVTANQX3ZEIXFNGIMEG6LIU7MUISFHQJUDQ7WAYLHPVEMWRLF7MW2ESOEJTQBLG4TJUASEDRCUMFA473MJGUKXSMI"
     }
   ],
   "enroll": [
     {
-      "url": "https://luciuspertis.github.io/mattend-0/?e=1&cid=PSP-LAB-SEC-D&l=PSP+Lab+Sec+D&f=1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ&u=954365518&n=1848492482&c=1848492483",
+      "url": "https://luciuspertis.github.io/mattend-0/?e=1&cid=PSP-LAB-SEC-D&l=PSP+Lab+Sec+D&f=1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ&u=954365518&n=1848492482&c=1848492483&w=120",
       "parsed": {
         "course_cid": "PSP-LAB-SEC-D",
         "label": "PSP Lab Sec D",
         "form_id": "1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ",
         "entry_uuid": "954365518",
         "entry_name": "1848492482",
-        "entry_cid": "1848492483"
+        "entry_cid": "1848492483",
+        "entry_pubkey": "",
+        "capture_window": "120"
       },
       "prefill": "https://docs.google.com/forms/d/e/1FAIpQLSfcrN2FwVpHrylwadlAgEZNMPBbI3vfcaslzdxPU1mIDmD_EQ/viewform?usp=pp_url&entry.954365518=11111111-1111-4111-8111-111111111111&entry.1848492482=Test+Student&entry.1848492483=PSP-LAB-SEC-D"
     },
     {
-      "url": "https://luciuspertis.github.io/mattend-0/?e=1&cid=DS-LAB-B&l=Data+Structures+%26+Algo&f=1FAIpQLSshortIdHere_00&u=11&n=22",
+      "url": "https://luciuspertis.github.io/mattend-0/?e=1&cid=DS-LAB-B&l=Data+Structures+%26+Algo&f=1FAIpQLSshortIdHere_00&u=11&n=22&w=120",
       "parsed": {
         "course_cid": "DS-LAB-B",
         "label": "Data Structures & Algo",
         "form_id": "1FAIpQLSshortIdHere_00",
         "entry_uuid": "11",
         "entry_name": "22",
-        "entry_cid": ""
+        "entry_cid": "",
+        "entry_pubkey": "",
+        "capture_window": "120"
       },
       "prefill": "https://docs.google.com/forms/d/e/1FAIpQLSshortIdHere_00/viewform?usp=pp_url&entry.11=0f8fad5b-d9cb-469f-a165-70867728950e&entry.22=Test+Student"
     }

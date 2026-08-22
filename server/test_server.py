@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 
 from . import camera as camera_mod, classroom as classroom_mod, codec, crypto
+from . import keys as keys_mod
 from . import enroll as enroll_mod, ledger as ledger_mod
 from . import roster as roster_mod, verify as verify_mod
 from .config import Config, Session, derive_cid
@@ -102,16 +103,29 @@ class CodecTests(unittest.TestCase):
 
     def test_outer_roundtrip(self):
         blob = crypto.pack(PC_SECRET, crypto.DOMAIN_PC, codec.encode_inner(1, 2))
-        plaintext = codec.encode_outer(blob, ALICE, 1700000005)
-        self.assertEqual(codec.decode_outer(plaintext), (blob, ALICE, 1700000005))
+        signature = bytes(range(64))
+        plaintext = codec.encode_outer(blob, ALICE, 1700000005, 1700000009, signature)
+        inner, uuid, cap_t, sub_t, sig, signed = codec.decode_outer(plaintext)
+        self.assertEqual((inner, uuid, cap_t, sub_t, sig), (blob, ALICE, 1700000005, 1700000009, signature))
+        self.assertEqual(signed, codec.encode_signed(blob, ALICE, 1700000005, 1700000009))
+
+    def test_old_protocol_version_is_rejected_clearly(self):
+        blob = crypto.pack(PC_SECRET, crypto.DOMAIN_PC, codec.encode_inner(1, 2))
+        stale = bytes([1]) + codec.encode_outer(blob, ALICE, 5, 6)[1:]
+        with self.assertRaises(codec.BadPayload) as caught:
+            codec.decode_outer(stale)
+        self.assertIn("out of date", str(caught.exception))
 
     def test_qr_size_budget(self):
         """The inner QR must stay at version 1 or the projector hop gets hard to read."""
         import qrcode
 
+        _pub, private = keys_mod.generate_device_key()
         source, _ = make_source_qr(PC_SECRET, 0xFFFFFFFF, gen_t=0xFFFFFFFF)
-        response = make_response_qr(APP_SECRET, source, ALICE, 0xFFFFFFFF)
-        for text, ceiling in ((source, 1), (response, 3)):
+        response = make_response_qr(APP_SECRET, source, ALICE, 0xFFFFFFFF, 0xFFFFFFFF, private)
+        # The response grew to v6 when 64-byte device signatures arrived; a phone
+        # screen still gives a 640x480 webcam ~5 px per module at that size.
+        for text, ceiling in ((source, 1), (response, 6)):
             qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2)
             qr.add_data(text)
             qr.make(fit=True)
@@ -554,6 +568,196 @@ class RegistryTests(unittest.TestCase):
         registry.add(a_class())
         self.assertIsNone(classroom_mod.migrate_from_config(registry, config_path))
         self.assertEqual(len(registry), 1)
+
+
+class SignatureTests(unittest.TestCase):
+    """Device keys: knowing the app secret is no longer enough to be somebody."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name)
+        self.pub, self.private = keys_mod.generate_device_key()
+        self.other_pub, self.other_private = keys_mod.generate_device_key()
+        self.now = int(time.time())
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def build(self, rows, **cfg_overrides):
+        path = self.base / "responses.csv"
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["Timestamp", "Email Address", "msL-key", "msL-pub",
+                             "Full Name", "Class_ID"])
+            writer.writerows(rows)
+        roster = load_roster(path, "IEC-2026-LAB")
+        settings = dict(delta_t_max_seconds=90, submit_window_seconds=10,
+                        capture_window_seconds=120, clock_skew_tolerance_seconds=15)
+        settings.update(cfg_overrides)
+        cfg = Config(pc_secret=PC_SECRET, app_secret=APP_SECRET,
+                     session=Session("IEC-2026-LAB", "2026-08-21", "A"),
+                     base_dir=self.base, **settings)
+        self.ring = keys_mod.KeyRing.fixed(PC_SECRET)
+        self.source, _ = make_source_qr(PC_SECRET, cfg.session.c_id, gen_t=self.now)
+        return Verifier(cfg, roster, pc_keys=self.ring)
+
+    def signed_rows(self, pubkey=None):
+        return [("8/20/2026 09:01", "iec2026025@iiita.ac.in", ALICE,
+                 self.pub if pubkey is None else pubkey, "Alice K", "IEC-2026-LAB")]
+
+    def respond(self, private=None, cap_offset=2, sub_offset=2):
+        return make_response_qr(APP_SECRET, self.source, ALICE,
+                                self.now + cap_offset, self.now + sub_offset, private)
+
+    def test_roster_reads_the_public_key_column(self):
+        verifier = self.build(self.signed_rows())
+        self.assertEqual(verifier.roster.lookup(ALICE).pubkey, self.pub)
+        self.assertEqual(verifier.roster.signed_devices, 1)
+
+    def test_correctly_signed_reply_passes(self):
+        verifier = self.build(self.signed_rows())
+        self.assertEqual(verifier.verify(self.respond(self.private), now=self.now + 3).verdict,
+                         verify_mod.OK)
+
+    def test_another_devices_signature_is_caught(self):
+        """Somebody with the public app secret minting a reply as Alice."""
+        verifier = self.build(self.signed_rows())
+        result = verifier.verify(self.respond(self.other_private), now=self.now + 3)
+        self.assertEqual(result.verdict, verify_mod.BAD_SIG)
+        self.assertEqual(result.subtitle, "ALICE K")
+
+    def test_unsigned_reply_from_a_registered_device_is_caught(self):
+        verifier = self.build(self.signed_rows())
+        result = verifier.verify(self.respond(None), now=self.now + 3)
+        self.assertEqual(result.verdict, verify_mod.BAD_SIG)
+        self.assertIn("unsigned", result.detail)
+
+    def test_students_registered_before_signing_still_work(self):
+        verifier = self.build(self.signed_rows(pubkey=""))
+        self.assertEqual(verifier.verify(self.respond(None), now=self.now + 3).verdict,
+                         verify_mod.OK)
+
+    def test_require_signature_locks_out_the_unregistered(self):
+        verifier = self.build(self.signed_rows(pubkey=""), require_signature=True)
+        result = verifier.verify(self.respond(None), now=self.now + 3)
+        self.assertEqual(result.verdict, verify_mod.BAD_SIG)
+        self.assertIn("re-enrol", result.detail)
+
+    def test_a_forged_signature_never_verifies(self):
+        verifier = self.build(self.signed_rows())
+        good = self.respond(self.private)
+        # flip a bit inside the signed region and re-encrypt
+        raw = crypto.unpack(APP_SECRET, crypto.DOMAIN_MOBILE, codec.b32decode(good))
+        tampered = bytearray(raw)
+        tampered[codec.SIGNED_LEN - 1] ^= 0x01
+        forged = codec.b32encode(crypto.pack(APP_SECRET, crypto.DOMAIN_MOBILE, bytes(tampered)))
+        self.assertEqual(verifier.verify(forged, now=self.now + 3).verdict, verify_mod.BAD_SIG)
+
+    def test_bad_signature_outranks_muop(self):
+        """A signature failure means the UUID is not evidence of who they are,
+        so nothing downstream of it can be trusted."""
+        rows = self.signed_rows() + [
+            ("8/20/2026 09:02", "iec2026025@iiita.ac.in", BOB_A, self.pub, "Alice K", "IEC-2026-LAB")]
+        verifier = self.build(rows)
+        self.assertTrue(verifier.roster.is_muop(verifier.roster.lookup(ALICE)))
+        self.assertEqual(verifier.verify(self.respond(self.other_private), now=self.now + 3).verdict,
+                         verify_mod.BAD_SIG)
+
+
+class ThreeClockTests(unittest.TestCase):
+    """Gen_T, Cap_T and Sub_T each close a different hole."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.cfg = Config(pc_secret=PC_SECRET, app_secret=APP_SECRET,
+                          session=Session("IEC-2026-LAB", "2026-08-21", "A"),
+                          delta_t_max_seconds=8, submit_window_seconds=10,
+                          capture_window_seconds=120, clock_skew_tolerance_seconds=5,
+                          base_dir=base)
+        self.roster = load_roster(write_roster(base), "IEC-2026-LAB")
+        self.ring = keys_mod.KeyRing.fixed(PC_SECRET)
+        self.verifier = Verifier(self.cfg, self.roster, pc_keys=self.ring)
+        self.now = int(time.time())
+        self.source, _ = make_source_qr(PC_SECRET, self.cfg.session.c_id, gen_t=self.now)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def respond(self, cap, sub):
+        return make_response_qr(APP_SECRET, self.source, ALICE, cap, sub)
+
+    def test_live_phone_passes(self):
+        result = self.verifier.verify(self.respond(self.now + 2, self.now + 30), now=self.now + 31)
+        self.assertEqual(result.verdict, verify_mod.OK)
+
+    def test_photographed_screen_caught_by_delta_t(self):
+        result = self.verifier.verify(self.respond(self.now + 60, self.now + 60), now=self.now + 61)
+        self.assertEqual(result.verdict, verify_mod.TO)
+        self.assertIn("stale source QR", result.detail)
+
+    def test_screenshotted_reply_caught_by_sub_t(self):
+        """A frozen image cannot refresh Sub_T; a live phone re-renders."""
+        result = self.verifier.verify(self.respond(self.now + 2, self.now + 2), now=self.now + 45)
+        self.assertEqual(result.verdict, verify_mod.TO)
+        self.assertIn("not a live screen", result.detail)
+
+    def test_whole_journey_is_bounded_even_if_the_phone_keeps_refreshing(self):
+        """Sub_T alone is client-controlled, so a phone could refresh forever."""
+        late = self.now + 400
+        result = self.verifier.verify(self.respond(self.now + 2, late), now=late)
+        self.assertEqual(result.verdict, verify_mod.TO)
+        self.assertIn("since capture", result.detail)
+
+    def test_clock_skew_is_tolerated(self):
+        result = self.verifier.verify(self.respond(self.now + 2, self.now + 8), now=self.now + 3)
+        self.assertEqual(result.verdict, verify_mod.OK)
+
+
+class KeyRotationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.cfg = Config(pc_secret=PC_SECRET, app_secret=APP_SECRET,
+                          session=Session("IEC-2026-LAB", "2026-08-21", "A"),
+                          delta_t_max_seconds=90, submit_window_seconds=60,
+                          capture_window_seconds=600, clock_skew_tolerance_seconds=15,
+                          base_dir=base)
+        self.roster = load_roster(write_roster(base), "IEC-2026-LAB")
+        self.ring = keys_mod.KeyRing.ephemeral()
+        self.verifier = Verifier(self.cfg, self.roster, pc_keys=self.ring)
+        self.now = int(time.time())
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def reply(self):
+        source, _ = make_source_qr(self.ring.current, self.cfg.session.c_id, gen_t=self.now)
+        return make_response_qr(APP_SECRET, source, ALICE, self.now + 2, self.now + 2)
+
+    def test_each_launch_gets_a_different_key(self):
+        self.assertNotEqual(keys_mod.KeyRing.ephemeral().current,
+                            keys_mod.KeyRing.ephemeral().current)
+
+    def test_reply_from_before_a_rotation_says_try_again(self):
+        payload = self.reply()
+        self.assertEqual(self.verifier.verify(payload, now=self.now + 3).verdict, verify_mod.OK)
+        self.ring.rotate()
+        result = self.verifier.verify(payload, now=self.now + 3)
+        self.assertEqual(result.verdict, verify_mod.TO)
+        self.assertIn("key reset", result.detail)
+
+    def test_two_rotations_later_it_is_simply_unreadable(self):
+        payload = self.reply()
+        self.ring.rotate()
+        self.ring.rotate()
+        self.assertEqual(self.verifier.verify(payload, now=self.now + 3).verdict,
+                         verify_mod.UNREADABLE)
+
+    def test_a_fresh_reply_after_rotation_passes(self):
+        self.ring.rotate()
+        self.assertEqual(self.verifier.verify(self.reply(), now=self.now + 3).verdict,
+                         verify_mod.OK)
 
 
 class LedgerTests(unittest.TestCase):

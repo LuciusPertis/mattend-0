@@ -65,6 +65,10 @@ class Config:
     app_secret: bytes
     session: Session
     delta_t_max_seconds: int = 90
+    submit_window_seconds: int = 10
+    capture_window_seconds: int = 120
+    require_signature: bool = False
+    rotate_key_on_launch: bool = True
     clock_skew_tolerance_seconds: int = 15
     qr_rotate_seconds: int = 5
     roster_csv: str = "data/responses.csv"
@@ -168,6 +172,10 @@ def load(path: str | os.PathLike | None = None, class_key: str | None = None) ->
         app_secret=_secret(raw, "app_secret_hex", "MATTEND_APP_SECRET"),
         session=room,
         delta_t_max_seconds=room.delta_t_max_seconds,
+        submit_window_seconds=room.submit_window_seconds,
+        capture_window_seconds=room.capture_window_seconds,
+        require_signature=room.require_signature,
+        rotate_key_on_launch=raw.get("rotate_key_on_launch", True),
         clock_skew_tolerance_seconds=room.clock_skew_tolerance_seconds,
         qr_rotate_seconds=room.qr_rotate_seconds,
         roster_csv=room.roster_csv,

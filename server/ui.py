@@ -91,7 +91,7 @@ class MetricsPanel(tk.Frame):
     """Small-print live telemetry. Deliberately dense and monospaced -- this is
     the corner you stare at when something is not working."""
 
-    ROWS = ("CAMERA", "DECODE", "SOURCE", "WINDOW", "ROSTER", "TALLY", "LAST", "UPTIME")
+    ROWS = ("CAMERA", "DECODE", "SOURCE", "WINDOW", "KEYS", "ROSTER", "TALLY", "LAST", "UPTIME")
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, bg=BG, **kwargs)

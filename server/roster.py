@@ -37,12 +37,13 @@ _HEADER_ALIASES = {
     "timestamp": ("timestamp", "time stamp", "submitted"),
     "email": ("email", "e-mail", "mail"),
     "uuid": ("uuid", "uvid", "msl-key", "msl key", "-key", "device"),
+    "pubkey": ("pub", "public"),
     "name": ("name",),
     "cid": ("cid", "class", "course", "section"),
 }
 
 # Checked in this order so the specific "msL-key" wins before a looser match.
-_ALIAS_ORDER = ("timestamp", "email", "uuid", "name", "cid")
+_ALIAS_ORDER = ("timestamp", "email", "pubkey", "uuid", "name", "cid")
 
 # Google Forms exports in the sheet's locale, so a slashed date can be either
 # M/D/Y or D/M/Y and the file does not say which. Rather than guess, the order
@@ -114,6 +115,7 @@ class Student:
     name: str
     cid: str
     registered_at: datetime | None = None
+    pubkey: str = ""            # base64url compressed P-256 point, "" if unregistered
 
     @property
     def roll(self) -> str:
@@ -144,6 +146,7 @@ def _map_headers(fieldnames: list[str]) -> dict[str, str]:
             if any(alias in column.strip().lower() for alias in _HEADER_ALIASES[key]):
                 resolved[key] = column
                 break
+    # pubkey is optional: a roster collected before device signing still loads.
     missing = {"email", "name", "uuid", "cid"} - resolved.keys()
     if missing:
         raise RosterError(
@@ -203,6 +206,10 @@ class Roster:
     def is_muop(self, student: Student) -> bool:
         return len(self._by_email.get(student.email, [])) > 1
 
+    @property
+    def signed_devices(self) -> int:
+        return sum(1 for student in self._by_uuid.values() if student.pubkey)
+
     def muop_report(self) -> dict[str, list[str]]:
         """Every email with more than one registered device."""
         return {email: uuids for email, uuids in self._by_email.items() if len(uuids) > 1}
@@ -252,6 +259,7 @@ def load(csv_path: Path | str, course_cid: str) -> Roster:
                 name=cell(row, "name"),
                 cid=cell(row, "cid"),
                 registered_at=parse_timestamp(cell(row, "timestamp"), date_order),
+                pubkey=cell(row, "pubkey"),
             )
         )
 

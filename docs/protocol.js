@@ -17,9 +17,10 @@
   // Must equal app_secret_hex in server/config.json.
   const APP_SECRET_HEX = "9dcb48b53200a5b764ca6f605350c4aa30794585fa484d847aafb35d2faef304";
 
-  const PROTO_VERSION = 1;
+  const PROTO_VERSION = 2;
   const TAG_LEN = 6;
   const INNER_BLOB_LEN = 15;
+  const SIG_LEN = 64;   // ECDSA P-256, P1363 r||s
   const DOMAIN_MOBILE = "mobile";
   const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -115,32 +116,62 @@
     return new Uint8Array([(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255]);
   }
 
-  /* Plaintext layout, mirroring codec.encode_outer:
-   *     version(1) | inner blob(15) | uuid(16) | cap_t(4)  = 36 bytes
-   * which packs to 42 bytes and Base32s to 68 alphanumeric characters -- a
-   * QR version 3 at ECC level L. */
-  function encodeOuter(innerBlob, deviceUUID, capT) {
+  /* The signed portion, mirroring codec.encode_signed:
+   *     version(1) | inner blob(15) | uuid(16) | cap_t(4) | sub_t(4) = 40 bytes
+   * plus a 64-byte signature = 104, which packs to 110 and Base32s to 176
+   * alphanumeric characters: QR version 6 at ECC level L. */
+  function encodeSigned(innerBlob, deviceUUID, capT, subT) {
     if (innerBlob.length !== INNER_BLOB_LEN) {
       throw new Error("that is not a mattend source QR");
     }
-    const out = new Uint8Array(1 + INNER_BLOB_LEN + 16 + 4);
+    const out = new Uint8Array(1 + INNER_BLOB_LEN + 16 + 4 + 4);
     out[0] = PROTO_VERSION;
     out.set(innerBlob, 1);
     out.set(uuidToBytes(deviceUUID), 1 + INNER_BLOB_LEN);
     out.set(u32(capT), 1 + INNER_BLOB_LEN + 16);
+    out.set(u32(subT), 1 + INNER_BLOB_LEN + 20);
     return out;
   }
 
   /**
-   * Fuse a scanned source QR with this device's identity and capture time.
-   * @returns {Promise<{text: string, capT: number}>} payload for the response QR.
+   * Fuse a scanned source QR with this device's identity, the moment it was
+   * captured, and the moment this reply was rendered.
+   *
+   * Sub_T is what separates a live phone from a screenshot: the app re-renders
+   * every couple of seconds so its Sub_T stays fresh, while a forwarded image
+   * carries a frozen one and the station rejects it.
+   *
+   * `privateKey` is this device's ECDSA P-256 key, generated at enrolment. When
+   * absent the signature is left all-zero, which the station treats as an
+   * unsigned reply -- accepted only while the class allows it.
+   *
+   * @returns {Promise<{text: string, capT: number, subT: number, signed: boolean}>}
    */
-  async function makeResponseQR(sourceText, deviceUUID, capT) {
+  async function makeResponseQR(sourceText, deviceUUID, capT, subT, privateKey) {
     const master = hexToBytes(APP_SECRET_HEX);
-    const capture = capT === undefined ? Math.floor(Date.now() / 1000) : capT;
-    const plaintext = encodeOuter(b32decode(sourceText), deviceUUID, capture);
-    return { text: b32encode(await pack(master, DOMAIN_MOBILE, plaintext)), capT: capture };
+    const now = Math.floor(Date.now() / 1000);
+    const capture = capT === undefined ? now : capT;
+    const submit = subT === undefined ? now : subT;
+
+    const signed = encodeSigned(b32decode(sourceText), deviceUUID, capture, submit);
+    let signature = new Uint8Array(SIG_LEN);
+    if (privateKey) {
+      signature = new Uint8Array(await crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" }, privateKey, signed
+      ));
+      if (signature.length !== SIG_LEN) throw new Error("unexpected signature length");
+    }
+
+    const plaintext = new Uint8Array(signed.length + SIG_LEN);
+    plaintext.set(signed, 0);
+    plaintext.set(signature, signed.length);
+    return {
+      text: b32encode(await pack(master, DOMAIN_MOBILE, plaintext)),
+      capT: capture, subT: submit, signed: Boolean(privateKey),
+    };
   }
 
-  global.MattendProtocol = { makeResponseQR, b32encode, b32decode, PROTO_VERSION, INNER_BLOB_LEN };
+  global.MattendProtocol = {
+    makeResponseQR, b32encode, b32decode, PROTO_VERSION, INNER_BLOB_LEN, SIG_LEN,
+  };
 })(window);

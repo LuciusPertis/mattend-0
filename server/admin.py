@@ -34,7 +34,8 @@ from .classroom import (
     slugify,
 )
 
-ROLES = (("uuid", "Device id (msL-key)"), ("name", "Full name"), ("cid", "Class id  (optional)"))
+ROLES = (("uuid", "Device id (msL-key)"), ("pubkey", "Device key (msL-pub)"),
+         ("name", "Full name"), ("cid", "Class id  (optional)"))
 FIELD_BG = "#1e2024"
 ENTRY_KW = dict(bg=FIELD_BG, fg=ui.FG, insertbackground=ui.FG, relief="flat",
                 highlightthickness=1, highlightbackground="#31343a", highlightcolor="#4c9be8")
@@ -403,7 +404,7 @@ class ClassManager:
         guessed = guess_roles(entries)
         self._fill_role_boxes(guessed)
         self._pending_form_id = form_id
-        missing = [caption for role, caption in ROLES[:2] if role not in guessed]
+        missing = [caption for role, caption in (ROLES[0], ROLES[2]) if role not in guessed]
         note = f"found {len(entries)} field(s) in form {form_id[:22]}…"
         if missing:
             note += "  — assign " + ", ".join(missing) + " below"

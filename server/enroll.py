@@ -32,7 +32,8 @@ from .classroom import Classroom, ClassroomError
 MARKER = "e"                    # ?e=1 marks a URL as an enrollment link
 VERSION = "1"
 
-_PARAM = {"cid": "cid", "label": "l", "form_id": "f", "uuid": "u", "name": "n", "cid_entry": "c"}
+_PARAM = {"cid": "cid", "label": "l", "form_id": "f", "uuid": "u", "name": "n",
+          "cid_entry": "c", "pubkey": "p", "window": "w"}
 
 
 def build_url(room: Classroom, pwa_url: str) -> str:
@@ -52,6 +53,10 @@ def build_url(room: Classroom, pwa_url: str) -> str:
     }
     if room.entries.get("cid"):
         params[_PARAM["cid_entry"]] = room.entries["cid"]
+    if room.entries.get("pubkey"):
+        params[_PARAM["pubkey"]] = room.entries["pubkey"]
+    # So the phone's countdown tells the truth instead of guessing.
+    params[_PARAM["window"]] = str(room.capture_window_seconds)
 
     parts = urlsplit(pwa_url.strip())
     if not parts.scheme:
@@ -87,10 +92,13 @@ def parse_url(text: str) -> dict[str, str]:
         "entry_uuid": one(_PARAM["uuid"]),
         "entry_name": one(_PARAM["name"]),
         "entry_cid": one(_PARAM["cid_entry"], required=False),
+        "entry_pubkey": one(_PARAM["pubkey"], required=False),
+        "capture_window": one(_PARAM["window"], required=False) or "120",
     }
 
 
-def prefill_url(parsed: dict[str, str], device_uuid: str, full_name: str) -> str:
+def prefill_url(parsed: dict[str, str], device_uuid: str, full_name: str,
+                public_key: str = "") -> str:
     """The Google Form link a student is sent to, with their details filled in."""
     params = {
         "usp": "pp_url",
@@ -99,4 +107,6 @@ def prefill_url(parsed: dict[str, str], device_uuid: str, full_name: str) -> str
     }
     if parsed.get("entry_cid"):
         params[f"entry.{parsed['entry_cid']}"] = parsed["course_cid"]
+    if parsed.get("entry_pubkey") and public_key:
+        params[f"entry.{parsed['entry_pubkey']}"] = public_key
     return f"https://docs.google.com/forms/d/e/{parsed['form_id']}/viewform?{urlencode(params)}"

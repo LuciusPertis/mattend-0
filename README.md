@@ -148,6 +148,7 @@ Your form needs a column for each of:
 | when | `Timestamp` | `8/20/2026 11:00:09` |
 | who | anything with **email** | `pmr2025001@iiita.ac.in` |
 | device | `UUID`, `msL-key`, anything with **key** or **device** | `f76b4844-25c3-…` |
+| device key | `msL-pub`, anything with **pub** | `A0irv0A5vz6Q_3Vn…` (44 chars) |
 | name | anything with **name** | `Shubhadeep Sarkar` |
 | class | `CID`, `Class_ID`, anything with **class** / **course** / **section** | `PSP-LAB-SEC-D` |
 
@@ -240,6 +241,7 @@ older ones shrink to a single line and eventually scroll off the bottom.
 
 | card | colour | meaning | what to do |
 |---|---|---|---|
+| roll + `DEVICE KEY MISMATCH` | 🟣 magenta | the reply wasn't signed by the phone registered to that student | someone is using another student's id — investigate |
 | roll + name | 🟢 green | present | nothing, they're marked |
 | `USER NOT FOUND` | ⚪ grey | device isn't on this course's roster | they never registered, or registered under a different CID |
 | roll + `MUoP REPORTED` | 🔴 red | that email has **two devices registered** | likely proxy — logged and named, follow up |
@@ -286,18 +288,61 @@ If you lower `delta_t_max_seconds`, also lower `CAPTURE_WINDOW_SECONDS` in
 
 ---
 
+## Device keys
+
+Each phone generates its own signing key at enrolment and submits the public
+half through your form. The station checks every reply against the key
+registered for that student.
+
+This matters because `app_secret` ships inside the web page — anyone who reads
+the page source could previously mint a reply as *anybody*. Now they'd also need
+that student's private key, which never leaves their phone.
+
+**Turning it on for a class that already exists:**
+
+1. Add one short-answer question to your form, e.g. *"msL-pub"*.
+2. In the Class Manager, paste a fresh prefilled link and assign the new
+   **Device key** field.
+3. Students re-scan your enrollment QR once. Same device id, now with a key.
+4. Once everyone has re-enrolled, set `require_signature` to `true` for that
+   class in `server/classes.json`.
+
+Until you do step 4, students without a key still pass — so nothing breaks
+mid-term. The station's `KEYS` metrics line shows `devices signed 3/40` so you
+can see how far along you are.
+
+## Rotating the room key
+
+The station makes a **fresh `P_c` every launch**, held in memory and never
+written to disk. Press **`k`** to rotate again mid-class.
+
+Rotating instantly voids every source QR already sitting on a phone. Use it if
+you think the screen has been photographed and passed around. A student who is
+merely slow sees *TIMEOUT — TRY AGAIN* rather than *INVALID CODE*, because the
+previous key is kept for exactly one generation.
+
+This applies to `server.app` only. Two separate machines can't share an
+in-memory key, so `pc_out`/`pc_in` keep using the one in `config.json`.
+
 ## What it stops, and what it doesn't
 
-**Stops:** yesterday's QR, another room's QR, a screenshot from earlier, a phone
-minting its own room code, and one person registering a second device for a friend.
+Three clocks, each closing a different hole:
 
-**Doesn't stop:** a student who *is* in the room forwarding QR #1 to an absent
-friend over chat inside the ΔT window. Lowering `delta_t_max_seconds` narrows
-that gap; closing it completely would need something a phone can't forward.
+| check | default | stops |
+|---|---|---|
+| `Cap_T − Gen_T` ≤ `delta_t_max_seconds` | 15s | scanning a **photograph of the screen** taken earlier |
+| now − `Sub_T` ≤ `submit_window_seconds` | 10s | showing a **screenshot of a reply** — a live phone re-signs every 2s, an image can't |
+| now − `Cap_T` ≤ `capture_window_seconds` | 120s | fusing early and **strolling in much later** |
 
-Also: `app_secret` ships inside the web page, so anyone who reads the page source
-can build a QR #2. They still can't produce a valid QR #1 without being in the
-room, so the guarantees above hold.
+Plus: another room's or another day's QR (`C_ID`), a phone minting its own room
+code (it lacks `pc_secret`), one person registering two devices (MUoP), and
+impersonating another student (device signature).
+
+**What's left:** a student in the room forwarding QR #1 to an absent friend
+*immediately*, who then fuses it on their own phone within `delta_t_max_seconds`.
+The friend's own device key signs it, so it verifies — but it's their UUID that
+gets marked, not the absent student's. To mark the absent student they'd need
+that student's phone. Pressing `k` kills any such window instantly.
 
 ---
 

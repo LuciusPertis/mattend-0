@@ -56,12 +56,14 @@ def main() -> int:
     other_source, _ = make_source_qr(cfg.pc_secret, derive_cid("IEC-2026-LAB", "2026-01-01", "A"), gen_t=now)
 
     cases = [
-        ("① pass",           make_response_qr(cfg.app_secret, source_text, good.uuid, now + 3)),
-        ("② user not found", make_response_qr(cfg.app_secret, source_text, UNREGISTERED, now + 3)),
+        ("① pass",           make_response_qr(cfg.app_secret, source_text, good.uuid, now + 3, now + 3)),
+        ("② user not found", make_response_qr(cfg.app_secret, source_text, UNREGISTERED, now + 3, now + 3)),
         ("③ MUoP",           make_response_qr(cfg.app_secret, source_text,
-                                              (flagged or good).uuid, now + 3)),
-        ("④ timeout",        make_response_qr(cfg.app_secret, source_text, good.uuid, now + cfg.delta_t_max_seconds + 30)),
-        ("⑤ wrong session",  make_response_qr(cfg.app_secret, other_source, good.uuid, now + 3)),
+                                              (flagged or good).uuid, now + 3, now + 3)),
+        ("④ timeout",        make_response_qr(cfg.app_secret, source_text, good.uuid,
+                                              now + cfg.delta_t_max_seconds + 30,
+                                              now + cfg.delta_t_max_seconds + 30)),
+        ("⑤ wrong session",  make_response_qr(cfg.app_secret, other_source, good.uuid, now + 3, now + 3)),
         ("⑥ garbage",        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
     ]
 

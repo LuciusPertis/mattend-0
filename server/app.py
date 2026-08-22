@@ -23,6 +23,7 @@ import traceback
 import tkinter as tk
 
 from . import camera as camera_mod
+from . import keys as keys_mod
 from . import ledger as ledger_mod
 from . import config as config_mod
 from . import roster as roster_mod
@@ -41,7 +42,11 @@ class OperatorApp:
     def __init__(self, cfg, roster):
         self.cfg = cfg
         self.roster = roster
-        self.verifier = Verifier(cfg, roster)
+        # A fresh P_c every launch, in memory only. Rotating invalidates every
+        # source QR already sitting on a phone -- see keys.KeyRing.
+        self.pc_keys = (keys_mod.KeyRing.ephemeral() if cfg.rotate_key_on_launch
+                        else keys_mod.KeyRing.fixed(cfg.pc_secret))
+        self.verifier = Verifier(cfg, roster, pc_keys=self.pc_keys)
         self.store = Store(cfg.db_file)
         self.c_id = cfg.session.c_id
         self.gen_t = 0
@@ -65,6 +70,7 @@ class OperatorApp:
         self.root.bind("e", lambda _e: self.export())
         self.root.bind("r", lambda _e: self.reload_roster())
         self.root.bind("c", lambda _e: self.queue.clear())
+        self.root.bind("k", lambda _e: self.rotate_key())
 
         self.root.columnconfigure(0, weight=1, uniform="half")
         self.root.columnconfigure(1, weight=1, uniform="half")
@@ -148,7 +154,7 @@ class OperatorApp:
     # ---------- QR rotation ----------
 
     def rotate(self):
-        text, self.gen_t = make_source_qr(self.cfg.pc_secret, self.c_id)
+        text, self.gen_t = make_source_qr(self.pc_keys.current, self.c_id)
         self.qr.show(text)
         self.remaining = self.cfg.qr_rotate_seconds
         self.tick()
@@ -162,6 +168,18 @@ class OperatorApp:
             return
         self.remaining -= 1
         self._schedule("tick", 1000, self.tick)
+
+    def rotate_key(self):
+        """Burn the current P_c. Every source QR already on a phone dies now."""
+        generation = self.pc_keys.rotate()
+        self.rotate()                       # repaint with the new key immediately
+        self.banner.show(
+            "KEY ROTATED",
+            f"generation {generation} — every QR taken before now is void",
+            "#d8a020",
+        )
+        print(f"[!] P_c rotated -> generation {generation}", flush=True)
+        self.refresh_metrics()
 
     # ---------- scanning ----------
 
@@ -249,15 +267,24 @@ class OperatorApp:
         )
         self.metrics.set(
             "WINDOW",
-            f"dT max {self.cfg.delta_t_max_seconds}s  skew {self.cfg.clock_skew_tolerance_seconds}s"
-            f"  refresh {self.cfg.qr_rotate_seconds}s",
+            f"dT {self.cfg.delta_t_max_seconds}s  submit {self.cfg.submit_window_seconds}s"
+            f"  journey {self.cfg.capture_window_seconds}s  skew {self.cfg.clock_skew_tolerance_seconds}s",
+        )
+        mode = "rotating" if self.cfg.rotate_key_on_launch else "fixed (config.json)"
+        signed = self.roster.signed_devices
+        total = len(self.roster)
+        self.metrics.set(
+            "KEYS",
+            f"P_c {mode} gen {self.pc_keys.generation}  age {int(self.pc_keys.age_seconds)}s"
+            f"   devices signed {signed}/{total}"
+            + ("  REQUIRED" if self.cfg.require_signature else ""),
+            warn if (self.cfg.require_signature and signed < total) else None,
         )
         rejected = len(getattr(self.roster, "rejected", []))
         self.metrics.set(
             "ROSTER",
             f"{self.cfg.session.course_cid}  {len(self.roster)} students  "
-            f"{len(self.roster.muop_report())} muop  {rejected} rejected  "
-            f"dates {getattr(self.roster, 'date_order', '?')}",
+            f"{len(self.roster.muop_report())} muop  {rejected} rejected",
             warn if rejected else None,
         )
         self.metrics.set(
@@ -340,7 +367,13 @@ def main() -> int:
         return 2
 
     print(f"[+] {cfg.session.display} · C_ID 0x{cfg.session.c_id:08x}")
-    print(f"[+] roster {len(roster)} students from {roster.source}")
+    print(f"[+] roster {len(roster)} students from {roster.source}"
+          f" ({roster.signed_devices} with device keys)")
+    if cfg.rotate_key_on_launch:
+        print("[+] P_c is fresh this launch and never written to disk; press k to rotate again.")
+    if cfg.require_signature and roster.signed_devices < len(roster):
+        print(f"[!] require_signature is on but {len(roster) - roster.signed_devices} student(s)"
+              " have no device key -- they will be rejected until they re-enrol.")
     muop = roster.muop_report()
     if muop:
         print(f"[!] {len(muop)} email(s) on multiple devices -- these report MUoP:")

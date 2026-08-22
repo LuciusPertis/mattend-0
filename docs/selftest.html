@@ -56,7 +56,7 @@ function check(name, actual, expected) {
 
     for (let i = 0; i < vectors.fuse.length; i++) {
       const v = vectors.fuse[i];
-      const out = await P.makeResponseQR(v.source, v.uuid, v.capT);
+      const out = await P.makeResponseQR(v.source, v.uuid, v.capT, v.subT, null);
       check(`P_s fusion #${i} (${v.uuid.slice(0, 8)}…)`, out.text, v.expected);
     }
 
@@ -74,6 +74,18 @@ function check(name, actual, expected) {
             E.prefillUrl(got, v.prefill.match(/entry\.\d+=([^&]*)/)[1], 'Test Student'),
             v.prefill);
     }
+    // device keys: generated here, verified by signing and checking length/shape
+    const pair = await E.deviceKeyPair();
+    check('device public key is 44 chars (33B compressed P-256)',
+          String(pair.publicKey.length), '44');
+    const signedOut = await P.makeResponseQR(
+      vectors.fuse[0].source, vectors.fuse[0].uuid, vectors.fuse[0].capT,
+      vectors.fuse[0].subT, pair.privateKey);
+    check('signed reply differs from unsigned', String(signedOut.text !== vectors.fuse[0].expected), 'true');
+    check('signed reply is the same length', String(signedOut.text.length),
+          String(vectors.fuse[0].expected.length));
+    check('key survives a second call', (await E.deviceKeyPair()).publicKey, pair.publicKey);
+
     check('a source QR is not an enrollment link',
           String(E.looksLikeEnrollment(vectors.fuse[0].source)), 'false');
 

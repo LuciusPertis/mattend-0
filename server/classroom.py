@@ -31,6 +31,7 @@ _ROLE_HINTS = {
     "uuid": ("uuid", "key", "device", "msl"),
     "name": ("name",),
     "cid": ("cid", "class", "course", "section"),
+    "pubkey": ("pub", "public"),
 }
 
 TODAY = "today"
@@ -115,9 +116,12 @@ class Classroom:
     roster_csv: str = ""
     slot: str = "A"
     date: str = TODAY                       # "today" resolves per run, so nobody edits it daily
-    delta_t_max_seconds: int = 15
+    delta_t_max_seconds: int = 15          # Cap_T - Gen_T : a photographed screen
+    submit_window_seconds: int = 10        # now   - Sub_T : a screenshotted reply
+    capture_window_seconds: int = 120      # now   - Cap_T : the whole journey
     clock_skew_tolerance_seconds: int = 5
     qr_rotate_seconds: int = 4
+    require_signature: bool = False        # turn on once every student has re-enrolled
 
     def __post_init__(self):
         self.course_cid = self.course_cid.strip().upper()

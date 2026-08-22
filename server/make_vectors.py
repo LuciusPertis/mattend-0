@@ -35,12 +35,15 @@ def main() -> int:
         gen_t = 1_700_000_000 + index * 911
         source, _ = make_source_qr(cfg.pc_secret, 0xD801CBFE ^ index, gen_t=gen_t)
         cap_t = gen_t + 7 + index
+        sub_t = cap_t + 3 + index
         fuse.append(
             {
                 "source": source,
                 "uuid": device_uuid,
                 "capT": cap_t,
-                "expected": make_response_qr(cfg.app_secret, source, device_uuid, cap_t),
+                "subT": sub_t,
+                # unsigned: the JS signs with a per-device key the vectors cannot know
+                "expected": make_response_qr(cfg.app_secret, source, device_uuid, cap_t, sub_t),
             }
         )
 

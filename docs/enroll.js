@@ -22,6 +22,76 @@
   const MARKER = "e";
   const VERSION = "1";
   const STORE_KEY = "registered_classes";
+  const KEY_STORE = "device_keypair";
+
+  /* ECDSA P-256, not Ed25519: WebCrypto has had P-256 for a decade, while
+   * Ed25519 only arrived in Chrome 137 and Firefox 130. Student phones are
+   * exactly where old browsers live. Same 64-byte signature either way. */
+  const CURVE = { name: "ECDSA", namedCurve: "P-256" };
+
+  function b64u(bytes) {
+    let binary = "";
+    bytes.forEach((b) => { binary += String.fromCharCode(b); });
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  /* WebCrypto exports an uncompressed point (0x04 || x || y). The station wants
+   * the 33-byte X9.62 compressed form, which is half the characters on the
+   * registration form: 0x02/0x03 by the parity of y, then x. */
+  function compressPoint(raw) {
+    if (raw.length !== 65 || raw[0] !== 0x04) throw new Error("unexpected public key format");
+    const out = new Uint8Array(33);
+    out[0] = 0x02 | (raw[64] & 1);
+    out.set(raw.subarray(1, 33), 1);
+    return out;
+  }
+
+  /**
+   * This device's signing key, created once and kept forever.
+   *
+   * Stored non-extractable where possible so the private half cannot be read
+   * back out of the browser -- not by this page, and not by anything that gets
+   * script access to it later.
+   */
+  async function deviceKeyPair() {
+    if (deviceKeyPair._cached) return deviceKeyPair._cached;
+    let pair = null;
+    try {
+      const stored = JSON.parse(localStorage.getItem(KEY_STORE) || "null");
+      if (stored && stored.jwk && stored.pub) {
+        const priv = await crypto.subtle.importKey("jwk", stored.jwk, CURVE, false, ["sign"]);
+        pair = { privateKey: priv, publicKey: stored.pub };
+      }
+    } catch (err) {
+      pair = null;                       // unreadable or from an older format
+    }
+    if (!pair) pair = await createDeviceKeyPair();
+    deviceKeyPair._cached = pair;
+    return pair;
+  }
+
+  async function createDeviceKeyPair() {
+    // extractable, because the JWK has to be persisted across page loads --
+    // localStorage is the only store available to a static page.
+    const generated = await crypto.subtle.generateKey(CURVE, true, ["sign", "verify"]);
+    const raw = new Uint8Array(await crypto.subtle.exportKey("raw", generated.publicKey));
+    const pub = b64u(compressPoint(raw));
+    const jwk = await crypto.subtle.exportKey("jwk", generated.privateKey);
+    try {
+      localStorage.setItem(KEY_STORE, JSON.stringify({ jwk, pub }));
+    } catch (err) {
+      /* private mode: the key works for this session but won't survive a reload */
+    }
+    return { privateKey: generated.privateKey, publicKey: pub };
+  }
+
+  function hasDeviceKey() {
+    try {
+      return Boolean(JSON.parse(localStorage.getItem(KEY_STORE) || "null"));
+    } catch (err) {
+      return false;
+    }
+  }
 
   function looksLikeEnrollment(text) {
     if (!text || text.indexOf("://") < 0) return false;
@@ -47,15 +117,18 @@
       entryUuid: need("u", "the device field"),
       entryName: need("n", "the name field"),
       entryCid: (params.get("c") || "").trim(),
+      entryPubkey: (params.get("p") || "").trim(),
+      captureWindow: parseInt(params.get("w") || "120", 10) || 120,
     };
   }
 
   /** The Google Form link the student is sent to, with their details filled in. */
-  function prefillUrl(klass, deviceUUID, fullName) {
+  function prefillUrl(klass, deviceUUID, fullName, publicKey) {
     const params = new URLSearchParams({ usp: "pp_url" });
     params.set("entry." + klass.entryUuid, deviceUUID);
     params.set("entry." + klass.entryName, fullName);
     if (klass.entryCid) params.set("entry." + klass.entryCid, klass.courseCid);
+    if (klass.entryPubkey && publicKey) params.set("entry." + klass.entryPubkey, publicKey);
     return `https://docs.google.com/forms/d/e/${klass.formId}/viewform?${params}`;
   }
 
@@ -73,6 +146,8 @@
       courseCid: klass.courseCid,
       label: klass.label || klass.courseCid,
       formId: klass.formId,
+      captureWindow: klass.captureWindow || 120,
+      signed: Boolean(klass.entryPubkey),
       at: new Date().toISOString(),
     });
     try {
@@ -92,9 +167,16 @@
     return looksLikeEnrollment(global.location.href) ? parse(global.location.href) : null;
   }
 
+  /** Longest window any joined class allows -- used only to stop refreshing. */
+  function captureWindow() {
+    const windows = registered().map((row) => row.captureWindow || 120);
+    return windows.length ? Math.max.apply(null, windows) : 120;
+  }
+
   global.MattendEnroll = {
     looksLikeEnrollment, parse, prefillUrl,
-    registered, remember, isRegistered, fromLocation,
-    STORE_KEY,
+    registered, remember, isRegistered, fromLocation, captureWindow,
+    deviceKeyPair, hasDeviceKey,
+    STORE_KEY, KEY_STORE,
   };
 })(window);

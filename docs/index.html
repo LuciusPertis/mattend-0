@@ -83,7 +83,9 @@
         <h3>2. Captured Target</h3>
         <div class="data-dump" id="scanned-data"></div>
         <h3>3. Fused Output QR</h3>
-        <p><small>Z*_s = P_s( scanned blob + UUID + capture time )</small></p>
+        <p><small>Z*_s = P_s( blob + UUID + Cap_T + Sub_T ) signed by this device</small></p>
+        <p><small class="empty-hint">This code refreshes every couple of seconds —
+           a screenshot of it will not work.</small></p>
         <div id="qrcode"></div>
         <p id="fusion-status" class="fusion-status"></p>
         <button id="reset-btn" style="margin-top: 20px;">Reset Pipeline</button>
@@ -159,16 +161,28 @@
             enrollSection.classList.remove('hidden');
         }
 
-        document.getElementById('enroll-btn').addEventListener('click', () => {
+        document.getElementById('enroll-btn').addEventListener('click', async () => {
             const name = document.getElementById('enroll-name').value.trim();
             if (!name) { alert("Please enter your full name."); return; }
             if (!pendingClass) { return; }
 
             userName = name;
             localStorage.setItem('local_user_name', userName);
+
+            // Mint this device's signing key before opening the form, so its
+            // public half rides along with the registration.
+            let publicKey = "";
+            try {
+                publicKey = (await MattendEnroll.deviceKeyPair()).publicKey;
+            } catch (err) {
+                alert("This browser cannot create a device key: " + err.message
+                      + "\nYou can still register, but attendance may be rejected.");
+            }
             MattendEnroll.remember(pendingClass);
 
-            window.open(MattendEnroll.prefillUrl(pendingClass, deviceUUID, userName), '_blank');
+            window.open(
+                MattendEnroll.prefillUrl(pendingClass, deviceUUID, userName, publicKey),
+                '_blank');
 
             // Drop ?e=... so a reload doesn't re-offer the same class.
             if (window.history.replaceState) {
@@ -224,60 +238,79 @@
             });
         });
 
-        // Display-only hint. Keep in step with delta_t_max_seconds in server/config.json;
-        // the server is the authority, this just warns the student before they walk up.
-        const CAPTURE_WINDOW_SECONDS = 15;
-        let expiryTimer = null;
+        // How often the reply is re-rendered. The station rejects a reply older
+        // than its own submit window (default 10s), so a screenshot goes stale
+        // while a live phone does not. Must stay well under that.
+        const RESUBMIT_EVERY_MS = 2000;
+
+        let rollTimer = null;
+        let captureAt = null;
+        let deviceKey = null;
 
         async function executeFusionPipeline(scannedText) {
             scanSection.classList.add('hidden');
             resultSection.classList.remove('hidden');
             document.getElementById('scanned-data').innerText = scannedText;
 
-            const qrCodeContainer = document.getElementById('qrcode');
             const status = document.getElementById('fusion-status');
-            qrCodeContainer.innerHTML = "";
+            document.getElementById('qrcode').innerHTML = "";
             status.className = 'fusion-status';
             status.innerText = "Fusing...";
 
-            let fused;
+            captureAt = Math.floor(Date.now() / 1000);
+            currentSource = scannedText;
             try {
-                fused = await MattendProtocol.makeResponseQR(scannedText, deviceUUID);
+                deviceKey = (await MattendEnroll.deviceKeyPair()).privateKey;
             } catch (err) {
-                status.className = 'fusion-status error';
-                status.innerText = `Could not fuse: ${err.message}`;
-                return;
+                deviceKey = null;             // registered before device keys existed
             }
-
-            new QRCode(qrCodeContainer, {
-                text: fused.text,
-                width: 250, height: 250,
-                colorDark : "#000000", colorLight : "#ffffff",
-                correctLevel : QRCode.CorrectLevel.L
-            });
-            startExpiryCountdown(fused.capT, status);
+            await rollResponse(status);
         }
 
-        function startExpiryCountdown(capT, status) {
-            clearInterval(expiryTimer);
-            const tick = () => {
-                const age = Math.floor(Date.now() / 1000) - capT;
-                const left = CAPTURE_WINDOW_SECONDS - age;
-                if (left > 0) {
-                    status.className = 'fusion-status';
-                    status.innerText = `Show this to the scanner — about ${left}s left.`;
-                } else {
+        let currentSource = null;
+
+        async function rollResponse(status) {
+            clearInterval(rollTimer);
+            const limit = MattendEnroll.captureWindow();
+
+            const paint = async () => {
+                const age = Math.floor(Date.now() / 1000) - captureAt;
+                if (age > limit) {
+                    clearInterval(rollTimer);
                     status.className = 'fusion-status stale';
-                    status.innerText = "Expired. Reset and scan the room QR again.";
-                    clearInterval(expiryTimer);
+                    status.innerText = "Expired. Reset and scan the room screen again.";
+                    document.getElementById('qrcode').innerHTML = "";
+                    return;
                 }
+                let fused;
+                try {
+                    fused = await MattendProtocol.makeResponseQR(
+                        currentSource, deviceUUID, captureAt, undefined, deviceKey);
+                } catch (err) {
+                    clearInterval(rollTimer);
+                    status.className = 'fusion-status error';
+                    status.innerText = `Could not fuse: ${err.message}`;
+                    return;
+                }
+                const box = document.getElementById('qrcode');
+                box.innerHTML = "";
+                new QRCode(box, {
+                    text: fused.text,
+                    width: 260, height: 260,
+                    colorDark: "#000000", colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.L
+                });
+                status.className = 'fusion-status';
+                status.innerText = `Live — hold this up to the scanner. `
+                    + `Scanned ${age}s ago${fused.signed ? "" : " (unsigned device)"}.`;
             };
-            tick();
-            expiryTimer = setInterval(tick, 1000);
+
+            await paint();
+            rollTimer = setInterval(paint, RESUBMIT_EVERY_MS);
         }
 
         document.getElementById('reset-btn').addEventListener('click', () => {
-            clearInterval(expiryTimer);
+            clearInterval(rollTimer);
             resultSection.classList.add('hidden');
             scanSection.classList.remove('hidden');
         });

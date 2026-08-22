@@ -19,6 +19,7 @@ key that made it.
 | file | role |
 |---|---|
 | `crypto.py` | `P_c` / `P_s` — SIV-mode authenticated encryption, 6-byte overhead |
+| `keys.py` | the rotating `P_c` ring, and device public-key verification |
 | `codec.py` | bit-packed fields, Base32 for QR alphanumeric mode |
 | `config.py` | this teacher's secrets and machine settings; merges in the active class |
 | `classroom.py` | the class registry, `C_ID` derivation, and the prefilled-link parser |
@@ -173,6 +174,44 @@ That last row is the one that matters: a `TO` card tells the student to try
 again, so the retry has to be allowed. Tallies are derived from the ledger's
 current verdict per device rather than incremented, so no path can double-count.
 
+### Three clocks
+
+`Gen_T` / `Cap_T` / `Sub_T`, checked in `verify._check_timing`:
+
+- `Cap_T − Gen_T` — the phone read a *current* source QR, not a photo of one.
+- now − `Sub_T` — the reply was rendered *just now*. A phone re-signs every two
+  seconds; a screenshot carries a frozen `Sub_T`. This is the check that
+  distinguishes a live screen from a forwarded image.
+- now − `Cap_T` — bounds the whole journey. Needed because `Sub_T` alone is
+  client-controlled: a modified app could refresh it forever.
+
+All three failures render as `TO` with different `detail` text, because the
+student's action is the same in every case — scan again.
+
+### Device signatures
+
+ECDSA P-256, signature in P1363 `r‖s` form (what WebCrypto emits), converted to
+DER for `cryptography` on the way in. Public keys travel as 33-byte X9.62
+compressed points, base64url — 44 characters in a form field.
+
+`BAD_SIG` is checked *immediately after* the roster lookup and before MUoP: if
+the signature doesn't hold, the UUID isn't evidence of who they are, so nothing
+downstream of it means anything.
+
+`require_signature` is per class and defaults to `false`, so a roster collected
+before device keys existed keeps working. `Roster.signed_devices` reports
+progress.
+
+### P_c rotation
+
+`KeyRing.ephemeral()` at every station launch — in memory, never persisted — and
+`k` rotates mid-class. `open_response_qr` tries the current key, then one
+previous generation, so a rotation degrades to "try again" rather than "invalid
+code" for anyone already mid-scan. Two generations back is genuinely unreadable.
+
+Two-machine setups can't share an in-memory key, so `pc_out`/`pc_in` use
+`KeyRing.fixed(config.pc_secret)`.
+
 ### Threading
 
 Tk is single-threaded and its mainloop must not block, but
@@ -227,7 +266,15 @@ over HTTP and open `selftest.html` on the phone. Every vector must pass or
 | | plaintext | packed | Base32 | QR |
 |---|---|---|---|---|
 | source `Z*_{CID,GT}` | 9 B | 15 B | 24 chars | **v1** (21×21) |
-| response `Z*_s` | 36 B | 42 B | 68 chars | **v3** (29×29) |
+| response `Z*_s` | 104 B | 110 B | 176 chars | **v6** (41×41) |
+| enrollment | — | — | ~180 chars | **v8–v10** |
+
+The response grew from v3 to v6 when device signatures arrived: a P-256
+signature is 64 bytes and, unlike a MAC, cannot be truncated. Measured against a
+640×480 webcam reading a phone screen, v6 still gives ~5 pixels per module
+against the ~3 a decoder needs. Shrinking the UUID to 8 bytes and the timestamps
+to deltas was tried and saves 13 bytes — not enough to drop a version, so the
+fields stayed full-width and simple.
 
 The source QR staying at version 1 is what makes the projector hop readable from
 the back of the room. `test_qr_size_budget` fails the build if a field change
