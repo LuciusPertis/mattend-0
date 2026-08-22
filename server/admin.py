@@ -184,6 +184,8 @@ class ClassManager:
                              cursor="hand2")
         help_link.pack(side="left")
         help_link.bind("<Button-1>", lambda _e: self.show_form_help())
+        tk.Button(header, text="Copy form description", command=self.copy_form_description,
+                  bg="#2c2f35", fg=ui.FG, relief="flat", padx=10).pack(side="right")
         row += 1
         tk.Label(pane,
                  text="In your form: ⋮ menu → Get pre-filled link → type UUID / NAME / CID into the\n"
@@ -227,10 +229,42 @@ class ClassManager:
     # ---------------- form setup help ----------------
 
     FORM_HELP = "FORM-SETUP.md"
+    # blob/main rather than a pinned commit, so the link follows the doc as it changes.
     FORM_HELP_URL = "https://github.com/LuciusPertis/mattend-0/blob/main/FORM-SETUP.md"
 
     def form_help_path(self) -> Path:
         return self.base.parent / self.FORM_HELP
+
+    def form_description(self) -> str:
+        """The blurb a teacher pastes into their form's description.
+
+        Read out of FORM-SETUP.md rather than duplicated here, so the button and
+        the documentation cannot drift apart.
+        """
+        marker = "## Text for your form description"
+        text = self.form_help_path().read_text(encoding="utf-8")
+        if marker not in text:
+            raise ClassroomError(f"{self.FORM_HELP} has no {marker!r} section")
+        after = text.split(marker, 1)[1]
+        if "```text" not in after:
+            raise ClassroomError(f"{self.FORM_HELP} section has no ```text block")
+        return after.split("```text", 1)[1].split("```", 1)[0].strip()
+
+    def copy_form_description(self):
+        try:
+            blurb = self.form_description()
+        except (ClassroomError, OSError) as exc:
+            messagebox.showerror("Not available", str(exc))
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(blurb)
+        self.root.update()          # hand it to the X selection now, not on idle
+        messagebox.showinfo(
+            "Copied",
+            "Paste this into your Google Form's description.\n\n"
+            "Keep this window open until you have pasted — on Linux the clipboard "
+            "is owned by the running app.",
+        )
 
     def show_form_help(self):
         """The column-naming rules, readable without leaving the app.
@@ -254,9 +288,8 @@ class ClassManager:
         bar.pack(fill="x")
         tk.Label(bar, text=str(path), bg=ui.PANEL_BG, fg=ui.DIM,
                  font=("TkFixedFont", 8)).pack(side="left", padx=12, pady=8)
-        tk.Button(bar, text="Open in browser", relief="flat", bg="#2c2f35", fg=ui.FG,
-                  command=lambda: webbrowser.open(
-                      path.as_uri() if path.exists() else self.FORM_HELP_URL)
+        tk.Button(bar, text="Open on GitHub", relief="flat", bg="#2c2f35", fg=ui.FG,
+                  command=lambda: webbrowser.open(self.FORM_HELP_URL)
                   ).pack(side="right", padx=10, pady=6)
 
         frame = tk.Frame(window, bg=ui.BG)

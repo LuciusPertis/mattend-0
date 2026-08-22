@@ -159,6 +159,10 @@ name — is refused with a clear error rather than guessed at.
 words to type, and which headers are ambiguous.** The Class Manager links to it
 from the Google Form section.
 
+It also carries the blurb to paste into your form's **description**, telling
+students not to touch the pre-filled fields — the Class Manager has a **Copy form
+description** button for it.
+
 Header matching is fuzzy and order-independent, so renaming a form question
 won't break the loader. Two things it handles for you:
 

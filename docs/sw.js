@@ -1,4 +1,4 @@
-/* mattend service worker -- version 4.3.13
+/* mattend service worker -- version 4.3.14
  *
  * The version literal below is rewritten by tools/bump_version.py and must match
  * docs/version.js (there is a test for that). Two things depend on it changing:
@@ -12,7 +12,7 @@
  * new protocol, new fields, invisible. Now the cache is only a fallback for
  * being offline, and a stale phone heals itself the moment it has signal.
  */
-const VERSION = "4.3.13";
+const VERSION = "4.3.14";
 const CACHE_NAME = `mattend-${VERSION}`;
 const SHELL = ["./", "./index.html", "./manifest.json",
                "./version.js", "./protocol.js", "./enroll.js"];

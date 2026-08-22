@@ -6,5 +6,5 @@
  *
  * Don't edit by hand; run `python3 tools/bump_version.py` instead.
  */
-const MATTEND_VERSION = "4.3.13";
+const MATTEND_VERSION = "4.3.14";
 if (typeof window !== "undefined") window.MATTEND_VERSION = MATTEND_VERSION;

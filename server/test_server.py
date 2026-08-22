@@ -401,6 +401,20 @@ class HeaderAmbiguityTests(unittest.TestCase):
         mapped = self.map(["Timestamp", "Email Address", "msL-key", "Full Name", "Class_ID"])
         self.assertNotIn("pubkey", mapped)
 
+    def test_form_description_block_is_extractable(self):
+        """The Class Manager's Copy button reads this out of the doc, so the
+        section and its fenced block have to keep existing."""
+        doc = Path(__file__).resolve().parent.parent / "FORM-SETUP.md"
+        text = doc.read_text()
+        marker = "## Text for your form description"
+        self.assertIn(marker, text)
+        blurb = text.split(marker, 1)[1].split("```text", 1)[1].split("```", 1)[0].strip()
+        self.assertTrue(blurb)
+        # it has to actually say the thing it exists to say
+        for phrase in ("msL-key", "msL-pub", "Class_ID", "Do not", "ERP"):
+            self.assertIn(phrase, blurb)
+        self.assertNotIn("```", blurb)
+
     def test_the_documented_example_csv_loads(self):
         """FORM-SETUP.md shows a CSV; it must actually work."""
         doc = Path(__file__).resolve().parent.parent / "FORM-SETUP.md"

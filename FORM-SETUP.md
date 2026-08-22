@@ -43,6 +43,37 @@ Leave it out only if you're rolling this out gradually.
 
 ---
 
+## Text for your form description
+
+Paste this into the form's **description** (the text under the title). It is
+what stops students editing the pre-filled fields, which is the most common way
+a registration ends up unusable.
+
+The Class Manager has a **Copy form description** button that puts exactly this
+on your clipboard.
+
+```text
+Do not open or fill this form directly.
+
+Open it only through the attendance app: scan the class enrollment QR, type your
+name there, and this form will open with everything else already filled in.
+
+Three answers are filled in for you — msL-key, msL-pub and Class_ID. Do not edit,
+retype or clear them. They identify your phone and prove it is yours. If you
+change them your attendance will not be recorded.
+
+The only thing you should type is your full name, exactly as it appears on ERP.
+
+Register once per course. If you get a new phone or clear your browser data,
+scan the enrollment QR again — but be aware that registering the same course from
+two devices is reported.
+```
+
+If you renamed the questions, change `msL-key`, `msL-pub` and `Class_ID` in that
+text to match what your students actually see.
+
+---
+
 ## Linking the form to a class
 
 The Class Manager needs Google's internal `entry.NNN` field ids, which the form
