@@ -42,6 +42,8 @@
         .empty-hint { color: #666; font-size: 13px; }
         .version-tag { color: #aaa; font-size: 11px; margin-top: 18px; letter-spacing: 0.5px; }
         .version-tag b { color: #666; font-weight: normal; }
+        .credit { color: #999; font-size: 11px; line-height: 1.6; margin: 6px 0 24px; }
+        .credit strong { color: #666; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -70,8 +72,6 @@
         <p><strong>Name:</strong> <span id="display-name"></span></p>
         <p><strong>Local UUID:</strong></p>
         <div class="data-dump" id="uuid-display"></div>
-        <p style="margin-bottom:0"><strong>Classes joined:</strong></p>
-        <ul class="class-list" id="class-list"></ul>
     </div>
 
     <div id="scanner-section" class="card hidden">
@@ -86,7 +86,7 @@
         <h3>2. Captured Target</h3>
         <div class="data-dump" id="scanned-data"></div>
         <h3>3. Fused Output QR</h3>
-        <p><small>Z*_s = P_s( blob + UUID + Cap_T + Sub_T ) signed by this device</small></p>
+        <!--<p><small>Z*_s = P_s( blob + UUID + Cap_T + Sub_T ) signed by this device</small></p>-->
         <p><small class="empty-hint">This code refreshes every couple of seconds —
            a screenshot of it will not work.</small></p>
         <div id="qrcode"></div>
@@ -94,9 +94,20 @@
         <button id="reset-btn" style="margin-top: 20px;">Reset Pipeline</button>
     </div>
 
+    <div id="classes-section" class="card hidden">
+        <h3>Classes joined</h3>
+        <ul class="class-list" id="class-list"></ul>
+        <p class="empty-hint">Scan another teacher's enrollment QR to add a course.
+           Your device id and key stay the same across all of them.</p>
+    </div>
+
     <button id="pwa-install-btn" class="hidden">Install as App</button>
     <p id="ios-instruction" class="ios-hint hidden">Using iOS? Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
     <p class="version-tag">mattend <b id="version-tag">—</b></p>
+    <p class="credit">
+        Designed by <strong>Lucius Sheep Pertis</strong><br>
+        Indian Institute of Information Technology, Allahabad &middot; India
+    </p>
 
     <script>
         let deviceUUID = localStorage.getItem('local_mobile_identity');
@@ -104,6 +115,7 @@
         
         const regSection = document.getElementById('registration-section');
         const enrollSection = document.getElementById('enroll-section');
+        const classesSection = document.getElementById('classes-section');
         const idSection = document.getElementById('identity-section');
         const scanSection = document.getElementById('scanner-section');
         const resultSection = document.getElementById('result-section');
@@ -121,12 +133,14 @@
             regSection.classList.add('hidden');
             idSection.classList.add('hidden');
             scanSection.classList.add('hidden');
+            classesSection.classList.add('hidden');
 
             if (classes.length === 0) {
                 regSection.classList.remove('hidden');
             } else {
                 idSection.classList.remove('hidden');
                 scanSection.classList.remove('hidden');
+                classesSection.classList.remove('hidden');
                 document.getElementById('display-name').innerText = userName || '—';
                 document.getElementById('uuid-display').innerText =
                     `********-****-****-****-******${deviceUUID.slice(-4)}`;
@@ -162,6 +176,7 @@
             idSection.classList.add('hidden');
             scanSection.classList.add('hidden');
             resultSection.classList.add('hidden');
+            classesSection.classList.add('hidden');
             enrollSection.classList.remove('hidden');
         }
 
