@@ -36,7 +36,7 @@ key that made it.
 | `camera.py` | capture + decode on a background thread |
 | `pc_out.py` | projector-only view, for a two-machine setup |
 | `pc_in.py` | headless scanner, for a two-machine setup or debugging |
-| `simulate.py` | all six verdicts with no camera and no phone |
+| `simulate.py` | every verdict with no camera and no phone; self-contained on a fresh clone |
 | `make_vectors.py` | interop vectors for `docs/selftest.html` |
 | `test_server.py` | 36 unit tests |
 
@@ -271,11 +271,16 @@ timeout, so a student who scans again at the end of class keeps their mark.
 ## Checking it works
 
 ```bash
-python3 -m unittest server.test_server -v  # 36 tests
-python3 -m server.simulate                 # all six verdicts, no hardware
-python3 -m server.simulate --png            # writes data/sim_*.png to point a camera at
+python3 -m server.simulate                 # every verdict, no hardware, no setup
+python3 -m server.simulate --demo          # force the built-in demo class
+python3 -m server.simulate --png           # writes data/sim_*.png to point a camera at
 python3 -m server.config                   # print the resolved session and C_ID
+python3 -m unittest server.test_server -v  # the regression suite
 ```
+
+`simulate` falls back to a demo class built on `data/responses.sample.csv` when
+there is no `config.json`, so a fresh clone can be checked before anything is
+configured.
 
 For the client half, run `python3 -m server.make_vectors`, serve `docs/`
 over HTTP and open `selftest.html` on the phone. Every vector must pass or

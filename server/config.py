@@ -148,7 +148,9 @@ def load(path: str | os.PathLike | None = None, class_key: str | None = None) ->
     """
     config_path = Path(path) if path else DEFAULT_CONFIG_PATH
     if not config_path.exists():
-        raise ConfigError(f"no config at {config_path}. Copy config.example.json and fill it in.")
+        raise ConfigError(
+            f"no config at {config_path}. Run `python3 -m server.admin` to create one."
+        )
     raw = json.loads(config_path.read_text())
     base_dir = config_path.resolve().parent
 
@@ -197,7 +199,17 @@ if __name__ == "__main__":
         print("# pc_secret is yours alone -- your source QRs only verify on your station.")
         print("# app_secret is also baked into docs/protocol.js (APP_SECRET_HEX).")
     else:
-        cfg = load()
+        try:
+            cfg = load()
+        except ConfigError as exc:
+            # Reached by anyone who runs this before setting anything up, so it
+            # points at the next step instead of dumping a traceback.
+            print(f"[-] {exc}", file=sys.stderr)
+            print("\n    Run `python3 -m server.admin` to create your config and add a class.",
+                  file=sys.stderr)
+            print("    Or `python3 -m server.simulate` to try the pipeline with no setup.",
+                  file=sys.stderr)
+            raise SystemExit(2)
         print(f"classes : {len(cfg.registry)} in {cfg.registry.path.name}")
         print(f"session : {cfg.session.display}")
         print(f"C_ID    : 0x{cfg.session.c_id:08x}")

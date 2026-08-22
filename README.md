@@ -55,15 +55,17 @@ pip install "qrcode[pil]" opencv-python
 python3 -m server.simulate
 ```
 
-You should see all six outcomes, computed end to end in software:
+No setup needed — with nothing configured it runs a built-in demo class and
+prints every verdict, computed end to end in software:
 
 ```
-① pass            OK            | IEC 2026 025 | SHAYAN M | dT=3s | (ΔT 3s)
-② user not found  UNF           | USER NOT FOUND | uuid 99999999… not registered
-③ MUoP            MUOP          | IEC 2026 007 | KARTHIK V | 2 devices on iec2026007@…
-④ timeout         TO            | IEC 2026 025 | SHAYAN M | ΔT 45s > 15s
-⑤ wrong session   WRONG_SESSION | INVALID CODE | C_ID mismatch
-⑥ garbage         UNREADABLE    | INVALID CODE | authentication tag mismatch
+① pass             OK            | DEMO001 | ASHA RAO | dT=3s
+② user not found   UNF           | USER NOT FOUND
+③ MUoP             MUOP          | DEMO003 | CHITRA S | 2 devices on demo003@…
+④ timeout          TO            | DEMO001 | ASHA RAO | ΔT 45s > 15s
+⑤ device mismatch  BAD_SIG       | DEMO005 | ESHA M
+⑥ wrong session    WRONG_SESSION | INVALID CODE
+⑦ garbage          UNREADABLE    | INVALID CODE
 ```
 
 If that works, the logic is sound and everything below is just wiring.
@@ -390,15 +392,19 @@ load behind — but never more, and the version tag tells you.
 
 ```
 docs/           the phone app — this folder is what GitHub Pages publishes
-server/         both PC halves and the verification logic
+server/         the station, the Class Manager, and the verification logic
 tools/          version bumping and the git hook that runs it
 FORM-SETUP.md   what your Google Form needs to look like
-qr*.py          early latency benchmarks, not part of the system
 ```
+
+Your own files — `server/config.json`, `server/classes.json`, the roster CSV and
+the attendance database — are gitignored, so pulling an update never touches
+them and pushing never leaks your keys.
 
 Design notes, the crypto, and the verdict precedence rules are in
 [server/README.md](server/README.md).
 
 ```bash
-python -m unittest server.test_server     # 36 tests
+python3 -m server.simulate                 # every verdict, no hardware
+python3 -m unittest server.test_server     # the regression suite
 ```
