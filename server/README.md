@@ -126,7 +126,14 @@ Export the Google Form responses to CSV and save as `data/responses.csv`.
 The real export is messier than it looks, so `roster.py` is defensive about:
 
 - **Renamed columns.** Matching is alias-based: `UUID`/`msL-key`/`*key*`/`*device*`,
-  `CID`/`Class_ID`/`*class*`/`*course*`/`*section*`, and so on.
+  `CID`/`Class_ID`/`*class*`/`*course*`/`*section*`, and so on. Full rules and the
+  recommended names are in [FORM-SETUP.md](../FORM-SETUP.md), which the Class
+  Manager shows inline.
+- **Ambiguous columns.** `_HEADER_EXCLUDES` disqualifies a header from a role
+  when it also matches a more specific one — `Course Name` is not a person's
+  name, `Public Key` is not the device id. Without this the loader silently
+  mapped names onto the class column. If nothing is left for a required role it
+  raises rather than guesses.
 - **More than one header row.** The header is taken as the row directly above
   the first row containing an `@`. A hand-written label row above the form's own
   header can list the columns in a *different order*; trusting it loads names as

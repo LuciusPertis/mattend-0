@@ -277,6 +277,80 @@ class RealExportTests(unittest.TestCase):
             self.write(self.BODY)
 
 
+class HeaderAmbiguityTests(unittest.TestCase):
+    """Plausible form questions that used to map to the wrong role, silently.
+
+    Documented in FORM-SETUP.md; the exclusions in roster._HEADER_EXCLUDES and
+    classroom._ROLE_EXCLUDES are what make these safe.
+    """
+
+    def map(self, headers):
+        return roster_mod._map_headers(headers)
+
+    def test_recommended_headers(self):
+        self.assertEqual(
+            self.map(["Timestamp", "Email Address", "msL-key", "msL-pub", "Full Name", "Class_ID"]),
+            {"timestamp": "Timestamp", "email": "Email Address", "pubkey": "msL-pub",
+             "uuid": "msL-key", "name": "Full Name", "cid": "Class_ID"},
+        )
+
+    def test_descriptive_headers_also_work(self):
+        mapped = self.map(["Timestamp", "Email", "Device Key", "Public Key",
+                           "Student Name", "Course Code"])
+        self.assertEqual(mapped["uuid"], "Device Key")
+        self.assertEqual(mapped["pubkey"], "Public Key")
+        self.assertEqual(mapped["name"], "Student Name")
+        self.assertEqual(mapped["cid"], "Course Code")
+
+    def test_course_name_does_not_steal_the_name_role(self):
+        mapped = self.map(["Timestamp", "Email", "msL-key", "Course Name", "Full Name"])
+        self.assertEqual(mapped["name"], "Full Name")
+        self.assertEqual(mapped["cid"], "Course Name")
+
+    def test_an_ambiguous_only_form_fails_loudly(self):
+        """Better a clear error than loading names into the UUID column."""
+        with self.assertRaises(RosterError) as caught:
+            self.map(["Timestamp", "Email Address", "msL-key", "Course Name", "Class_ID"])
+        self.assertIn("name", str(caught.exception))
+
+    def test_public_key_is_not_taken_for_the_device_id(self):
+        mapped = self.map(["Timestamp", "Email", "Public Key", "Device Id", "Name", "CID"])
+        self.assertEqual(mapped["pubkey"], "Public Key")
+        self.assertEqual(mapped["uuid"], "Device Id")
+
+    def test_prefill_sample_pubkey_is_not_taken_for_the_device_id(self):
+        """'PUBKEY' contains 'key', which used to win the uuid role."""
+        self.assertEqual(
+            classroom_mod.guess_roles({"1": "PUBKEY", "2": "DEVICE", "3": "NAME", "4": "CID"}),
+            {"pubkey": "1", "uuid": "2", "name": "3", "cid": "4"},
+        )
+
+    def test_prefill_samples_from_the_doc(self):
+        self.assertEqual(
+            classroom_mod.guess_roles({"1": "UUID", "2": "PUB", "3": "NAME", "4": "CID"}),
+            {"pubkey": "2", "uuid": "1", "name": "3", "cid": "4"},
+        )
+
+    def test_pubkey_column_stays_optional(self):
+        mapped = self.map(["Timestamp", "Email Address", "msL-key", "Full Name", "Class_ID"])
+        self.assertNotIn("pubkey", mapped)
+
+    def test_the_documented_example_csv_loads(self):
+        """FORM-SETUP.md shows a CSV; it must actually work."""
+        doc = Path(__file__).resolve().parent.parent / "FORM-SETUP.md"
+        block = doc.read_text().split("```csv")[1].split("```")[0].strip()
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            path = Path(tmp.name) / "responses.csv"
+            path.write_text(block + "\n")
+            roster = load_roster(path, "PSP-LAB-SEC-D")
+            self.assertEqual(len(roster), 2)
+            self.assertEqual(roster.signed_devices, 2)
+            self.assertEqual(roster.students[0].roll, "PMR 2025 001")
+        finally:
+            tmp.cleanup()
+
+
 class TimestampTests(unittest.TestCase):
     def test_both_formats_in_one_file_parse(self):
         self.assertEqual(roster_mod.parse_timestamp("8/20/2026 11:00:09"),

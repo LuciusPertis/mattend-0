@@ -27,11 +27,17 @@ _FORM_ID = re.compile(r"/forms/d/(?:e/)?([A-Za-z0-9_-]{10,})")
 _ENTRY = re.compile(r"entry\.(\d+)")
 
 # Sentinel text a teacher can type into the prefill so roles are auto-assigned.
+# pubkey is tested before uuid: a sample reading "PUBKEY" contains "key", and
+# without the ordering plus the exclusions below it would be taken as the device id.
 _ROLE_HINTS = {
+    "pubkey": ("pub", "public"),
     "uuid": ("uuid", "key", "device", "msl"),
     "name": ("name",),
     "cid": ("cid", "class", "course", "section"),
-    "pubkey": ("pub", "public"),
+}
+_ROLE_EXCLUDES = {
+    "uuid": ("pub", "public"),
+    "name": ("cid", "class", "course", "section", "key", "pub"),
 }
 
 TODAY = "today"
@@ -100,7 +106,10 @@ def guess_roles(entries: dict[str, str]) -> dict[str, str]:
         for entry_id, sample in entries.items():
             if entry_id in roles.values():
                 continue
-            if any(hint in sample.strip().lower() for hint in hints):
+            low = sample.strip().lower()
+            if any(bad in low for bad in _ROLE_EXCLUDES.get(role, ())):
+                continue
+            if any(hint in low for hint in hints):
                 roles[role] = entry_id
                 break
     return roles

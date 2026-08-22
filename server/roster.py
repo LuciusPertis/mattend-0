@@ -45,6 +45,14 @@ _HEADER_ALIASES = {
 # Checked in this order so the specific "msL-key" wins before a looser match.
 _ALIAS_ORDER = ("timestamp", "email", "pubkey", "uuid", "name", "cid")
 
+# Words that disqualify a column from a role even though an alias matched.
+# "Course Name" is not a person's name; "Public Key" is not the device id.
+# Without these, a plausible form silently maps names onto the class column.
+_HEADER_EXCLUDES = {
+    "name": ("cid", "class", "course", "section", "key", "pub"),
+    "uuid": ("pub", "public"),
+}
+
 # Google Forms exports in the sheet's locale, so a slashed date can be either
 # M/D/Y or D/M/Y and the file does not say which. Rather than guess, the order
 # is inferred from the data -- see _infer_date_order. None of these formats are
@@ -143,7 +151,10 @@ def _map_headers(fieldnames: list[str]) -> dict[str, str]:
         for column in fieldnames:
             if column in resolved.values():
                 continue
-            if any(alias in column.strip().lower() for alias in _HEADER_ALIASES[key]):
+            low = column.strip().lower()
+            if any(bad in low for bad in _HEADER_EXCLUDES.get(key, ())):
+                continue
+            if any(alias in low for alias in _HEADER_ALIASES[key]):
                 resolved[key] = column
                 break
     # pubkey is optional: a roster collected before device signing still loads.

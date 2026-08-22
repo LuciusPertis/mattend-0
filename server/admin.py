@@ -15,6 +15,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -174,9 +175,15 @@ class ClassManager:
         tk.Frame(pane, bg="#2a2c31", height=1).grid(row=row, column=0, columnspan=2,
                                                     sticky="ew", pady=16)
         row += 1
-        tk.Label(pane, text="GOOGLE FORM", bg=ui.BG, fg=ui.FG,
-                 font=("TkDefaultFont", 10, "bold"), anchor="w").grid(
-            row=row, column=0, columnspan=2, sticky="w")
+        header = tk.Frame(pane, bg=ui.BG)
+        header.grid(row=row, column=0, columnspan=2, sticky="ew")
+        tk.Label(header, text="GOOGLE FORM", bg=ui.BG, fg=ui.FG,
+                 font=("TkDefaultFont", 10, "bold")).pack(side="left")
+        help_link = tk.Label(header, text="  what columns does my form need? ↗",
+                             bg=ui.BG, fg="#4c9be8", font=("TkDefaultFont", 9, "underline"),
+                             cursor="hand2")
+        help_link.pack(side="left")
+        help_link.bind("<Button-1>", lambda _e: self.show_form_help())
         row += 1
         tk.Label(pane,
                  text="In your form: ⋮ menu → Get pre-filled link → type UUID / NAME / CID into the\n"
@@ -216,6 +223,53 @@ class ClassManager:
         tk.Button(pane, text="Save class", command=self.save_class, bg="#2c2f35", fg=ui.FG,
                   relief="flat", padx=18, pady=8).grid(row=row, column=0, columnspan=2,
                                                        sticky="w", pady=16)
+
+    # ---------------- form setup help ----------------
+
+    FORM_HELP = "FORM-SETUP.md"
+    FORM_HELP_URL = "https://github.com/LuciusPertis/mattend-0/blob/main/FORM-SETUP.md"
+
+    def form_help_path(self) -> Path:
+        return self.base.parent / self.FORM_HELP
+
+    def show_form_help(self):
+        """The column-naming rules, readable without leaving the app.
+
+        Shown inline rather than only linked, because the moment a teacher needs
+        this is the moment they are staring at a header-mismatch error.
+        """
+        path = self.form_help_path()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = (f"Could not open {path}.\n\nRead it online instead:\n{self.FORM_HELP_URL}")
+
+        window = tk.Toplevel(self.root)
+        window.title("Google Form setup")
+        window.configure(bg=ui.BG)
+        window.geometry("760x680")
+        window.bind("<Escape>", lambda _e: window.destroy())
+
+        bar = tk.Frame(window, bg=ui.PANEL_BG)
+        bar.pack(fill="x")
+        tk.Label(bar, text=str(path), bg=ui.PANEL_BG, fg=ui.DIM,
+                 font=("TkFixedFont", 8)).pack(side="left", padx=12, pady=8)
+        tk.Button(bar, text="Open in browser", relief="flat", bg="#2c2f35", fg=ui.FG,
+                  command=lambda: webbrowser.open(
+                      path.as_uri() if path.exists() else self.FORM_HELP_URL)
+                  ).pack(side="right", padx=10, pady=6)
+
+        frame = tk.Frame(window, bg=ui.BG)
+        frame.pack(fill="both", expand=True)
+        scroll = tk.Scrollbar(frame)
+        scroll.pack(side="right", fill="y")
+        body = tk.Text(frame, wrap="word", bg=ui.BG, fg=ui.FG, relief="flat",
+                       font=("TkFixedFont", 9), padx=16, pady=12,
+                       yscrollcommand=scroll.set)
+        body.pack(fill="both", expand=True)
+        scroll.config(command=body.yview)
+        body.insert("1.0", text)
+        body.config(state="disabled")
 
     # ---------------- enrollment QR ----------------
 

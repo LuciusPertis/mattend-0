@@ -149,8 +149,15 @@ Your form needs a column for each of:
 | who | anything with **email** | `pmr2025001@iiita.ac.in` |
 | device | `UUID`, `msL-key`, anything with **key** or **device** | `f76b4844-25c3-…` |
 | device key | `msL-pub`, anything with **pub** | `A0irv0A5vz6Q_3Vn…` (44 chars) |
+
+A header that is genuinely ambiguous — `Course Name` is both a course and a
+name — is refused with a clear error rather than guessed at.
 | name | anything with **name** | `Shubhadeep Sarkar` |
 | class | `CID`, `Class_ID`, anything with **class** / **course** / **section** | `PSP-LAB-SEC-D` |
+
+**→ [FORM-SETUP.md](FORM-SETUP.md) has the exact column names, the prefill
+words to type, and which headers are ambiguous.** The Class Manager links to it
+from the Google Form section.
 
 Header matching is fuzzy and order-independent, so renaming a form question
 won't break the loader. Two things it handles for you:
